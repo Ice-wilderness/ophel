@@ -311,6 +311,30 @@ export class ChatGPTAdapter extends SiteAdapter {
       .filter((c) => c.id)
   }
 
+  async loadAllConversations(): Promise<boolean> {
+    const container = this.getSidebarScrollContainer()
+    if (!(container instanceof HTMLElement)) return false
+
+    let lastCount = this.getConversationList().length
+    let stableRounds = 0
+    const maxStableRounds = 3
+
+    while (stableRounds < maxStableRounds) {
+      container.scrollTop = container.scrollHeight
+      await this.sleep(500)
+
+      const currentCount = this.getConversationList().length
+      if (currentCount > lastCount) {
+        lastCount = currentCount
+        stableRounds = 0
+      } else {
+        stableRounds++
+      }
+    }
+
+    return true
+  }
+
   getSidebarScrollContainer(): Element | null {
     // 侧边栏滚动容器 - 通过 #history 向上查找最近的 nav 元素
     const history = document.querySelector("#history")
