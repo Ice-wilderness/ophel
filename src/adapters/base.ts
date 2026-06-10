@@ -503,6 +503,7 @@ export abstract class SiteAdapter {
 
     for (let round = 0; round < maxRounds; round++) {
       container.scrollTop = container.scrollHeight
+      container.dispatchEvent(new Event("scroll", { bubbles: true }))
       await new Promise((r) => setTimeout(r, waitMs))
 
       const currentCount = this.getLoadedConversationCount()

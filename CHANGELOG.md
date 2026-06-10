@@ -16,6 +16,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### 🐛 Bug Fixes
 
+- **Conversation sync loading** — Conversation sync now uses each adapter's own conversation source to decide when sidebar history has finished loading, waits longer for slow lazy-loaded sidebars, and disables sync-delete when a complete load cannot be confirmed. Doubao and Yuanbao now share the safer base loader. (#639)
 - **ChatGPT tab status** — ChatGPT tabs no longer show `⏳` while idle when a sidebar conversation title contains "Stop" or "停止". The generation detector now only uses visible stop buttons from the composer area. (#630)
 - **Gemini tab renaming** — Gemini tabs no longer flicker back to the native page title during active replies when automatic tab renaming is enabled.
 - **Gemini watermark removal** — Replaced the legacy Gemini/Nano Banana remover with the SDK-backed implementation and fixed user-uploaded image handling plus generated-image removal regressions. (#593, #625)
