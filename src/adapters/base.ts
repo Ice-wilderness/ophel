@@ -495,23 +495,34 @@ export abstract class SiteAdapter {
     if (!container) return false
 
     let lastCount = this.getLoadedConversationCount()
+    let lastScrollHeight = container.scrollHeight
     let stableRounds = 0
-    const maxStableRounds = 3
+    const maxStableRounds = 4
+    const maxRounds = 40
+    const waitMs = 800
 
-    while (stableRounds < maxStableRounds) {
+    for (let round = 0; round < maxRounds; round++) {
       container.scrollTop = container.scrollHeight
-      await new Promise((r) => setTimeout(r, 500))
+      await new Promise((r) => setTimeout(r, waitMs))
 
       const currentCount = this.getLoadedConversationCount()
-      if (currentCount > lastCount) {
-        lastCount = currentCount
+      const currentScrollHeight = container.scrollHeight
+      const hasProgress = currentCount > lastCount || currentScrollHeight > lastScrollHeight
+
+      if (hasProgress) {
+        lastCount = Math.max(lastCount, currentCount)
+        lastScrollHeight = Math.max(lastScrollHeight, currentScrollHeight)
         stableRounds = 0
       } else {
         stableRounds++
       }
+
+      if (stableRounds >= maxStableRounds) {
+        return true
+      }
     }
 
-    return true
+    return false
   }
 
   // ==================== 生成状态检测 ====================
