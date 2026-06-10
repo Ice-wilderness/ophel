@@ -422,6 +422,11 @@ export abstract class SiteAdapter {
     return []
   }
 
+  /** 获取已加载的会话数量，用于判断滚动加载是否稳定 */
+  protected getLoadedConversationCount(): number {
+    return this.getConversationList().length
+  }
+
   /** 获取当前页面会话的基础元数据 */
   getCurrentConversationInfo(): ConversationInfo | null {
     const id = this.getSessionId()
@@ -489,7 +494,7 @@ export abstract class SiteAdapter {
     const container = this.getSidebarScrollContainer()
     if (!container) return false
 
-    let lastCount = 0
+    let lastCount = this.getLoadedConversationCount()
     let stableRounds = 0
     const maxStableRounds = 3
 
@@ -497,15 +502,12 @@ export abstract class SiteAdapter {
       container.scrollTop = container.scrollHeight
       await new Promise((r) => setTimeout(r, 500))
 
-      // 使用 DOMToolkit 穿透 Shadow DOM 查询会话数量
-      const conversations =
-        (DOMToolkit.query(".conversation", { all: true, shadow: true }) as Element[]) || []
-      const currentCount = conversations.length
-      if (currentCount === lastCount) {
-        stableRounds++
-      } else {
+      const currentCount = this.getLoadedConversationCount()
+      if (currentCount > lastCount) {
         lastCount = currentCount
         stableRounds = 0
+      } else {
+        stableRounds++
       }
     }
 
