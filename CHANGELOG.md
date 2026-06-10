@@ -9,6 +9,18 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### ✨ Improvements
+
+- **Userscript bundle size** — Split Markdown rendering code, Markdown styles, user-query Markdown styles, and site icons into external userscript assets so Greasy Fork sync has less inline code to process while preserving the existing rendering injection path.
+
+### 🐛 Bug Fixes
+
+- **Conversation sync loading** — Conversation sync now uses each adapter's own conversation source to decide when sidebar history has finished loading, waits longer for slow lazy-loaded sidebars, and disables sync-delete when a complete load cannot be confirmed. Doubao and Yuanbao now share the safer base loader. (#639)
+
+---
+
+## [1.0.59] - 2026-06-10
+
 ### 🚀 New Features
 
 - **Outline copy** — The Outline toolbar can now copy the currently selected outline depth as Markdown headings by reusing the export pipeline, so virtual-scroll conversations are loaded and restored safely before headings and user queries are copied. (#539)
@@ -16,10 +28,11 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### 🐛 Bug Fixes
 
-- **Conversation sync loading** — Conversation sync now uses each adapter's own conversation source to decide when sidebar history has finished loading, waits longer for slow lazy-loaded sidebars, and disables sync-delete when a complete load cannot be confirmed. Doubao and Yuanbao now share the safer base loader. (#639)
+- **ChatGPT native TOC outline** — ChatGPT outlines now recover the full user-question list when the native TOC only exposes real prompt text after hover, cache the extracted labels per TOC instance, and avoid userscript crashes from cross-realm pointer events. (#642)
 - **ChatGPT tab status** — ChatGPT tabs no longer show `⏳` while idle when a sidebar conversation title contains "Stop" or "停止". The generation detector now only uses visible stop buttons from the composer area. (#630)
 - **Gemini tab renaming** — Gemini tabs no longer flicker back to the native page title during active replies when automatic tab renaming is enabled.
 - **Gemini watermark removal** — Replaced the legacy Gemini/Nano Banana remover with the SDK-backed implementation and fixed user-uploaded image handling plus generated-image removal regressions. (#593, #625)
+- **Prompt imports** — Prompt Library import now accepts prompt backup files exported from the Backup page, not just the raw prompt-list JSON format.
 - **Rendered user-query spacing** — Rendered Markdown in user questions now ignores native plain-text whitespace classes, preventing large blank gaps between paragraphs and quoted text on DeepSeek, Doubao, Z.ai, ChatGLM, Qwen, and similar sites.
 
 ---
@@ -1170,6 +1183,7 @@ This is the first official release of Ophel, providing comprehensive enhancement
 
 ---
 
+[1.0.59]: https://github.com/urzeye/ophel/releases/tag/v1.0.59
 [1.0.58]: https://github.com/urzeye/ophel/releases/tag/v1.0.58
 [1.0.57]: https://github.com/urzeye/ophel/releases/tag/v1.0.57
 [1.0.56]: https://github.com/urzeye/ophel/releases/tag/v1.0.56
