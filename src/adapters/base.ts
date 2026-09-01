@@ -517,6 +517,15 @@ export abstract class SiteAdapter {
     return []
   }
 
+  /**
+   * 删除同步范围：返回 null 表示当前会话列表即完整集合（默认）；
+   * 返回函数时，只有判定为 true 的已存会话参与删除同步。
+   * 用于同站点存在多个互不相交会话列表的场景（如 Gemini 的 /app 侧边栏与 Spark 任务列表）。
+   */
+  getConversationDeletionScope(): ((conv: ConversationInfo) => boolean) | null {
+    return null
+  }
+
   /** 获取已加载的会话数量，用于判断滚动加载是否稳定 */
   protected getLoadedConversationCount(): number {
     return this.getConversationList().length
@@ -540,6 +549,15 @@ export abstract class SiteAdapter {
   /** 获取侧边栏滚动容器 */
   getSidebarScrollContainer(): Element | null {
     return null
+  }
+
+  /**
+   * 会话观察器绑定的根节点。默认复用侧边栏滚动容器；
+   * 若会话列表位于会随 SPA 路由销毁重建的容器内（如 Gemini Spark 的 task-list），
+   * 应覆盖此方法返回更稳定的节点，返回 null 时调用方回退到 document 根。
+   */
+  getConversationObserverContainer(): Element | null {
+    return this.getSidebarScrollContainer()
   }
 
   /** 获取会话观察器配置 */

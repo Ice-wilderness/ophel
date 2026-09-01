@@ -350,7 +350,10 @@ export class ConversationManager {
       nextConversations[storageKey] = {
         ...conv,
         cid: currentCid,
-        url: this.buildGeminiConversationUrl(conv.id, userPathPrefix),
+        // Spark 线程的 URL 是 /spark/chat/{id}，不能按 /app 模板重建
+        url: (conv.url || "").includes("/spark/chat/")
+          ? conv.url
+          : this.buildGeminiConversationUrl(conv.id, userPathPrefix),
       }
     })
 
@@ -602,10 +605,10 @@ export class ConversationManager {
       const maxRetries = 5
       const retryDelay = 1000
 
-      const sidebarContainer = this.siteAdapter.getSidebarScrollContainer() || document
+      const sidebarContainer = this.siteAdapter.getConversationObserverContainer() || document
 
       if (config.shadow && retryCount < maxRetries) {
-        const foundContainer = this.siteAdapter.getSidebarScrollContainer()
+        const foundContainer = this.siteAdapter.getConversationObserverContainer()
         if (!foundContainer) {
           setTimeout(() => startObserverRetry(retryCount + 1), retryDelay)
           return
@@ -774,7 +777,7 @@ export class ConversationManager {
     el.dataset.ghTitleObserver = "true"
 
     if (!this.titleWatcher) {
-      const container = this.siteAdapter.getSidebarScrollContainer() || document.body
+      const container = this.siteAdapter.getConversationObserverContainer() || document.body
       this.titleWatcher = DOMToolkit.watchMultiple(container as Node, {
         debounce: 500,
       })
@@ -1153,9 +1156,11 @@ export class ConversationManager {
 
     if (options.syncDeleted) {
       const currentCid = this.siteAdapter.getCurrentCid?.() || null
+      const deletionScope = this.siteAdapter.getConversationDeletionScope?.() ?? null
 
       Object.entries(conversations).forEach(([id, conv]) => {
         if (!this.matchesCid(conv, currentCid)) return
+        if (deletionScope && !deletionScope(conv)) return
         if (sidebarIds.has(id)) return
 
         deleteIds.push(this.getConversationStorageKey(id))
