@@ -11,22 +11,22 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### 🚀 New Features
 
-- **Gemini Spark conversation sync** — Task threads in Gemini Spark (gemini.google.com/spark) now sync into Conversation Manager: the sync button reads recent threads on the Spark home page and the full thread list on the All Tasks page, pinned state syncs along, and clicking a synced thread opens it directly; sync no longer reports "no conversations detected in sidebar" on Spark pages. (#902)
-- **Cross-site conversation search** — Global search now also matches conversation titles from other supported sites; results from other sites carry the site icon and an "External" badge, and clicking one opens the conversation in a new tab. (#888)
+- **Cross-site conversation search** — Global search now also matches conversations from other supported sites; results show the site icon and an "External" badge, and clicking one opens it in a new tab. (#888)
+- **Gemini Spark conversation sync** — Task threads in Gemini Spark (gemini.google.com/spark) now sync into Conversation Manager, including pinned state; clicking a synced thread opens it. (#902)
 
 ### ✨ Improvements
 
-- **Popup Quick Access for multi-entry sites** — Sites bound to multiple domains (like Kimi's kimi.com and kimi.ai) now take a single tile in the popup's Quick Access grid instead of one tile per domain; the tile shows which entry will open, a corner button opens an entry switch menu that flips upward when space below runs out, and the last chosen entry is remembered. (#895)
-- **Tooltip display** — Tooltips are lighter, flip automatically near screen edges, and dismiss immediately on click or Esc; sweeping across neighboring buttons now shows hints instantly without the hover delay; quick action button hints open toward the center of the screen, and list hints (outline, conversations, folders, prompt chains, selected prompt bar) only appear when the title is truncated, so hovering no longer covers neighboring items; the settings theme switch shows hints only in icon-only mode. (#885)
-- **Update notifications** — The full-screen "What's New" dialog no longer pops up automatically after each update. Instead, a one-time corner toast announces the new version, and an unread red dot appears on the panel logo and on the quick panel button while the panel is collapsed: hovering the logo previews the highlights, clicking opens the full notes, and the dot clears once read. The Settings → About entry remains available. (#887)
-- **Site Packs entry in feature tips** — The "Site Packs" name in the outline feature tips is now a highlighted link; clicking it opens Settings → Site Packs directly on the online library tab.
-- **Header drag hint** — The passthrough-mode hint on the panel header now appears only when you press and hold the header, so it no longer flashes and covers the title while clicking, double-clicking, or dragging the panel.
+- **Update notifications** — Version updates no longer pop up the full-screen changelog. A one-time corner toast appears instead, and a red dot on the panel logo previews highlights on hover and opens the full notes on click. (#887)
+- **Tooltips** — Tooltips now flip near screen edges and dismiss on click or Esc; list-item hints only appear when the title is truncated, so they no longer cover neighboring content. (#885)
+- **Popup Quick Access for multi-entry sites** — Sites with multiple domains (like Kimi's kimi.com and kimi.ai) now take a single tile in the popup Quick Access grid; you can switch entries, and the last choice is remembered. (#895)
+- **Site Packs entry in feature tips** — "Site Packs" in the outline feature tips is now a clickable link that opens Settings → Site Packs on the online library.
+- **Header drag hint** — The passthrough-mode hint now appears only after holding the header, so it no longer flashes over the title when clicking or dragging the panel.
 
 ### 🐛 Bug Fixes
 
-- **Kimi international site** — The extension now recognizes Kimi's international domain kimi.ai, so the panel no longer shows "not supported" there; outline, export, Zen Mode, and other Kimi features work on both kimi.ai and kimi.com. (#890)
-- **ChatGPT in-page bookmark icons** — Fixed the bookmark star feature repeatedly expanding ChatGPT's native prompt navigation text layer in the background on every sent message and content update, regardless of the "Show user queries" and "Auto-update outline during conversation" switches; in long conversations this could drive up tab memory usage. (#889)
-- **Popup language setting** — Fixed the extension popup always showing the browser language: switching the interface language in Settings now also applies to the popup, which previously kept falling back to the browser language. (#897)
+- **ChatGPT in-page bookmark icons** — Fixed in-page bookmarks repeatedly expanding ChatGPT question text in long conversations, which could drive up tab memory usage. (#889)
+- **Kimi international site** — The extension now recognizes kimi.ai, so outline, export, Zen Mode, and other Kimi features work on both kimi.ai and kimi.com. (#890)
+- **Popup language setting** — Fixed the extension popup always showing the browser language; it now follows the interface language in Settings. (#897)
 
 ---
 
