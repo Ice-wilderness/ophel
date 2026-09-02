@@ -11,6 +11,10 @@ export const ko = {
   communityMotto: "빨리 가려면 혼자 가고, 멀리 가려면 함께 가라.",
   welcomeJoin: "Ophel에 오신 것을 환영합니다",
   agreeButton: "이해했으며 동의합니다",
+  disclaimerAffiliation:
+    "이 확장 프로그램은 지원되는 사이트와 공식적인 제휴 또는 보증 관계가 없으며, 관련 상표와 명칭은 각 소유자에게 있습니다.",
+  disclaimerAgreeNote: "위 버튼을 클릭하면 위 내용을 읽고 이해했으며 동의한 것으로 간주됩니다.",
+  disclaimerContribute: "기여하기",
 
   tabPrompts: "프롬프트",
   tabSettings: "설정",
@@ -237,13 +241,13 @@ export const ko = {
   // ======== About Page ========
   version: "버전",
   aboutDescription:
-    "{appName}은 Gemini, ChatGPT, Claude, AI Studio, Grok과 같은 AI 플랫폼을 위해 설계된 브라우저 확장 프로그램입니다. 대화 관리, 스마트 개요, 프롬프트 라이브러리로 워크플로우를 강화하며 읽기 기록 복원, 양방향 앵커, 워터마크 제거, 형식 수정, 모델 잠금과 같은 유틸리티를 제공합니다. 테마 및 UI에 대한 포괄적인 사용자 정의 옵션을 통해 {appName}은 더욱 부드럽고 효율적인 AI 상호작용 환경을 보장합니다.",
+    "{appName}은 ChatGPT, Claude, Gemini, DeepSeek, Doubao 등 AI 플랫폼을 위한 브라우저 확장 프로그램으로, 어댑터 팩(JSON 규칙)으로 지원 사이트를 확장할 수 있습니다. 대화 관리, 다중 형식보내기, 스마트 개요, 전역 검색, 프롬프트 큐 같은 생산성 도구와 함께 읽기 진행 복원, 수식 렌더링·복사, 완료 알림, 모델 잠금, 페이지 레이아웃 조정 같은 편의 기능을 제공하며, 테마, Zen 모드, WebDAV 동기화도 지원하여 더욱 매끄러운 AI 경험을 제공합니다.",
   aboutSupportedPlatforms: "지원 플랫폼",
   aboutSupportedPlatformsDesc:
     "현재 {count}개의 AI 플랫폼을 지원하며, 팝업의 사이트 감지 및 빠른 접근 목록과 같은 기준을 사용합니다.",
   projectLinks: "프로젝트 링크",
   githubRepository: "GitHub 저장소",
-  githubDesc: "소스 코드 확인, 문제 보고 또는 기여",
+  githubDesc: "GitHub에서 스타를 눌러 개발을 응원해 주세요",
   giveStar: "GitHub에서 스타 주기",
   projectWebsite: "공식 웹사이트",
   websiteDesc: "문서, 가이드 등 확인",
@@ -1725,7 +1729,7 @@ export const ko = {
   queueBatchImportAction: "대기열에 추가",
   queueBatchImportSuccess: "{count}개의 프롬프트를 대기열에 추가했습니다",
   queueBatchImportEmpty: "추가할 프롬프트가 없습니다",
-  zenModeTitle: "선(Zen) 모드",
+  zenModeTitle: "선 모드",
   zenModeLabel: "선 모드 활성화",
   zenModeDesc: "사이드바 및 내비게이션 요소를 숨겨 현재 대화에 집중합니다 (각 사이트별 개별 설정)",
   zenModeExitButton: "선 모드 종료",
@@ -1863,7 +1867,14 @@ export const ko = {
   discordDesc:
     "커뮤니티에 참여하여 다른 사용자와 소통하고, 피드백을 제공하고, 최신 소식을 받아보세요",
   joinDiscord: "그룹 가입",
-  kofiSupport: "Buy Me a Coffee",
+  joinDiscordCommunity: "Discord 참여",
+  kofiSupport: "Ko-fi에서 후원하기",
   kofiDesc: "Ophel이 도움이 되었다면 개발자를 지원하기 위해 커피를 사주는 것을 고려해 주세요",
   kofiBtn: "Ko-fi에서 후원하기",
+  sponsorSupport: "프로젝트 후원",
+  sponsorDesc: "Ophel이 도움이 되었다면 개발 지속을 후원해 주세요",
+  wechatPay: "WeChat Pay",
+  alipayPay: "Alipay",
+  afdianSupport: "Afdian",
+  afdianCardDesc: "지속적인 개발 응원하기",
 }

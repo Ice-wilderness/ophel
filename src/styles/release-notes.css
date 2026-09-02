@@ -264,11 +264,58 @@
 
 .gh-release-notes-footer {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap;
+  row-gap: 8px;
   padding: 14px 16px;
   border-top: 1px solid var(--gh-border, #e5e7eb);
   background: var(--gh-bg, #ffffff);
+}
+
+/* 子项不压缩，保证溢出检测按各组 offsetWidth 读到真实内容宽度，放不下时换行而不是变形 */
+.gh-release-notes-footer > * {
+  flex-shrink: 0;
+}
+
+/* 测量期间强制单行，scrollWidth 才能反映完整内容宽度 */
+.gh-release-notes-footer.is-measuring {
+  flex-wrap: nowrap;
+}
+
+.gh-release-notes-star-link {
+  flex: 0 0 auto;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.gh-release-notes-footer-support {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+}
+
+/* 紧凑模式：Star/赞助按钮隐藏文案只留图标（按钮样式保留），由 JS 实测溢出后触发。
+   is-measuring 期间暂停紧凑样式，保证溢出判定始终按完整内容宽度 */
+.gh-release-notes-footer.is-compact:not(.is-measuring) .gh-release-notes-star-link {
+  padding: 0 10px;
+}
+
+.gh-release-notes-footer.is-compact:not(.is-measuring) .gh-release-notes-star-link span {
+  display: none;
+}
+
+.gh-release-notes-star-link svg {
+  flex-shrink: 0;
+}
+
+.gh-release-notes-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-left: auto;
 }
 
 .gh-release-notes-primary,
@@ -309,8 +356,18 @@
   transform: translateY(-1px);
 }
 
+.gh-release-notes-primary:hover {
+  /* 实色主按钮 hover 加深 12%，24 套主题共用同一规则 */
+  background: color-mix(in srgb, var(--gh-primary, #4285f4) 88%, #000000);
+}
+
 .gh-release-notes-secondary:hover {
   background: var(--gh-hover, #f3f4f6);
+}
+
+.gh-release-notes-primary:active,
+.gh-release-notes-secondary:active {
+  transform: translateY(1px);
 }
 
 .gh-release-notes-primary:focus-visible,
@@ -371,6 +428,18 @@
   outline: none;
 }
 
+/* 关于页“查看更新日志”按钮上的未读红点 */
+.about-release-notes-unread {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--gh-danger, #ef4444);
+  /* keyframes 复用 settings.css 的 gh-unread-dot-pulse（本文件始终与其一同注入） */
+  animation: gh-unread-dot-pulse 2s infinite;
+}
+
 @keyframes gh-release-notes-enter {
   from {
     opacity: 0;
@@ -403,6 +472,16 @@
 
   .gh-release-notes-footer {
     flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .gh-release-notes-footer-support {
+    justify-content: center;
+  }
+
+  .gh-release-notes-footer-actions {
+    width: 100%;
+    margin-left: 0;
   }
 
   .about-hero-heading {
@@ -414,8 +493,9 @@
     width: 100%;
   }
 
-  .gh-release-notes-primary,
-  .gh-release-notes-secondary {
+  /* 仅右侧操作按钮全宽；Star/赞助保持行内按钮，居中排列 */
+  .gh-release-notes-footer-actions .gh-release-notes-primary,
+  .gh-release-notes-footer-actions .gh-release-notes-secondary {
     width: 100%;
   }
 }

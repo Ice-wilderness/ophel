@@ -11,6 +11,11 @@ export const ja = {
   communityMotto: "早く行きたければ、一人で行け。遠くへ行きたければ、みんなで行け。",
   welcomeJoin: "Ophelへようこそ",
   agreeButton: "理解し同意する",
+  disclaimerAffiliation:
+    "この拡張機能は対応サイトと公式な提携・承認関係にありません。各商標・名称はそれぞれの所有者に帰属します。",
+  disclaimerAgreeNote:
+    "上のボタンをクリックすると、上記の内容を読み、理解し、同意したことになります。",
+  disclaimerContribute: "貢献する",
 
   tabPrompts: "プロンプト",
   tabSettings: "設定",
@@ -240,13 +245,13 @@ export const ja = {
   // ======== About Page ========
   version: "バージョン",
   aboutDescription:
-    "{appName}は、Gemini、ChatGPT、Claude、AI Studio、GrokなどのAIプラットフォーム向けに設計されたブラウザ拡張機能です。会話管理、スマートアウトライン、プロンプトライブラリなどの機能でワークフローを強化し、既読位置の復元、双方向アンカー、透かし除去、フォーマット修正、モデルロックなどのユーティリティを提供します。テーマやUIの豊富なカスタマイズオプションにより、よりスムーズで効率的なAI体験を実現します。",
+    "{appName}は、ChatGPT、Claude、Gemini、DeepSeek、DoubaoなどのAIプラットフォーム向けのブラウザ拡張機能で、アダプターパック（JSONルール）で対応サイトを拡張できます。会話管理、多形式エクスポート、スマートアウトライン、グローバル検索、プロンプトキューなどの効率化ツールに加え、読書進捗の復元、数式レンダリング・コピー、完了通知、モデルロック、ページレイアウト調整などの便利機能を備え、テーマ、ゼンモード、WebDAV同期にも対応。AIとのやり取りをより快適にします。",
   aboutSupportedPlatforms: "対応プラットフォーム",
   aboutSupportedPlatformsDesc:
     "現在 {count} 個の AI プラットフォームに対応しており、ポップアップのサイト判定とクイックアクセスと同期しています。",
   projectLinks: "プロジェクトリンク",
   githubRepository: "GitHub リポジトリ",
-  githubDesc: "ソースコードの確認、バグ報告、貢献はこちら",
+  githubDesc: "GitHub でスターを付けて開発を応援してください",
   giveStar: "GitHubでスターを送る",
   projectWebsite: "公式サイト",
   websiteDesc: "ドキュメントやガイドなどを確認",
@@ -1882,7 +1887,14 @@ export const ja = {
   discordDesc:
     "コミュニティに参加して、他のユーザーと交流したり、フィードバックを提供したり、最新情報を入手したりできます",
   joinDiscord: "グループに参加",
-  kofiSupport: "Buy Me a Coffee",
+  joinDiscordCommunity: "Discord に参加",
+  kofiSupport: "Ko-fi で支援",
   kofiDesc: "Ophel がお役に立ちましたら、開発者を支援するためにコーヒーを奢ることをご検討ください",
   kofiBtn: "Ko-fi で支援",
+  sponsorSupport: "開発を支援",
+  sponsorDesc: "Ophel がお役に立ちましたら、開発の継続を支援してください",
+  wechatPay: "WeChat Pay",
+  alipayPay: "Alipay",
+  afdianSupport: "愛発電",
+  afdianCardDesc: "継続的な開発を応援",
 }

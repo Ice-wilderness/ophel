@@ -11,6 +11,11 @@ export const es = {
   communityMotto: "Si quieres ir rápido, ve solo. Si quieres ir lejos, ve acompañado.",
   welcomeJoin: "Bienvenido a Ophel",
   agreeButton: "Entiendo y Acepto",
+  disclaimerAffiliation:
+    "Esta extensión no está afiliada oficialmente ni respaldada por los sitios compatibles; todas las marcas y nombres pertenecen a sus respectivos propietarios.",
+  disclaimerAgreeNote:
+    "Al hacer clic en el botón de arriba, confirmas que has leído, entendido y aceptado lo anterior.",
+  disclaimerContribute: "Contribuir",
 
   tabPrompts: "Indicaciones",
   tabSettings: "Ajustes",
@@ -238,13 +243,13 @@ export const es = {
   // ======== About Page ========
   version: "Versión",
   aboutDescription:
-    "{appName} es una extensión diseñada para Gemini, ChatGPT, Claude, AI Studio y Grok. Mejora tu flujo de trabajo con gestión de chats, índices inteligentes y biblioteca de prompts, ofreciendo utilidades como historial de lectura, anclajes, eliminación de marcas de agua, avisos de finalización y bloqueo de modelo. Con amplias opciones de personalización, {appName} asegura una experiencia de IA más fluida.",
+    "{appName} es una extensión de navegador para plataformas de IA como ChatGPT, Claude, Gemini, DeepSeek y Doubao, ampliable a más sitios mediante paquetes de adaptadores (reglas JSON). Ofrece gestión de conversaciones, exportación multiformato, esquemas inteligentes, búsqueda global y colas de prompts, además de restauración del progreso de lectura, renderizado y copia de fórmulas, avisos de finalización, bloqueo de modelo y ajuste del diseño. Con temas, modo Zen y sincronización WebDAV, hace que tu interacción con la IA sea más fluida y agradable.",
   aboutSupportedPlatforms: "Plataformas compatibles",
   aboutSupportedPlatformsDesc:
     "Actualmente cubre {count} plataformas de IA, sincronizadas con la detección y el acceso rápido del popup.",
   projectLinks: "Enlaces del Proyecto",
   githubRepository: "Repositorio de GitHub",
-  githubDesc: "Código fuente, reportes o contribuir",
+  githubDesc: "Da una estrella al repositorio para apoyar el desarrollo",
   giveStar: "Dar Estrella en GitHub",
   projectWebsite: "Sitio Oficial",
   websiteDesc: "Documentación y guías",
@@ -1884,7 +1889,14 @@ Dame el código y luego un resumen de mejoras.`,
   discordDesc:
     "Únete a nuestra comunidad para hablar con otros usuarios, enviar comentarios y obtener las últimas noticias",
   joinDiscord: "Unirse al grupo",
-  kofiSupport: "Buy Me a Coffee",
+  joinDiscordCommunity: "Unirse a Discord",
+  kofiSupport: "Apoyar en Ko-fi",
   kofiDesc: "Si Ophel te resulta útil, considera invitar a un café para apoyar al desarrollador",
   kofiBtn: "Apoyar en Ko-fi",
+  sponsorSupport: "Apoyar el proyecto",
+  sponsorDesc: "Si Ophel te resulta útil, considera apoyar el desarrollo",
+  wechatPay: "WeChat Pay",
+  alipayPay: "Alipay",
+  afdianSupport: "Afdian",
+  afdianCardDesc: "Impulsa el desarrollo continuo",
 }

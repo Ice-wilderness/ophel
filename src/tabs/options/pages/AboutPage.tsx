@@ -2,14 +2,17 @@
  * 关于页面
  * 显示扩展信息、版本、链接等
  */
-import React from "react"
+import React, { useEffect, useState, useSyncExternalStore } from "react"
 
 import { PlatformIcon } from "~components/PlatformIcon"
 import {
   AboutIcon,
+  AfdianIcon,
   ChromeIcon,
+  ClearIcon,
   DiscordIcon,
   EdgeIcon,
+  ExternalLinkIcon,
   FirefoxIcon,
   GithubIcon,
   GlobeIcon,
@@ -22,9 +25,17 @@ import {
 } from "~components/icons"
 import { SparkleIcon } from "~components/icons/SparkleIcon"
 import { STORE_LINKS } from "~constants/store-links"
+import { useHasUnseenReleaseNotes } from "~hooks/useHasUnseenReleaseNotes"
 import { useSupportedAiPlatforms } from "~hooks/useSupportedAiPlatforms"
 import { APP_DISPLAY_NAME, APP_VERSION, getAppIconUrl } from "~utils/config"
-import { t } from "~utils/i18n"
+import {
+  AFDIAN_URL,
+  GITHUB_REPO_URL,
+  OPHEL_WEBSITE_URL,
+  getDonateChannels,
+  resolveSupportImageUrl,
+} from "~utils/donate-channels"
+import { getCurrentLang, subscribeI18nChanges, t } from "~utils/i18n"
 
 import { PageTitle } from "../components"
 
@@ -35,6 +46,24 @@ interface AboutPageProps {
 const AboutPage: React.FC<AboutPageProps> = ({ onOpenReleaseNotes }) => {
   const supportedPlatforms = useSupportedAiPlatforms()
   const supportedPlatformsCount = String(supportedPlatforms.length)
+  const language = useSyncExternalStore(subscribeI18nChanges, getCurrentLang, getCurrentLang)
+  const donateChannels = getDonateChannels(language)
+  const hasUnseenReleaseNotes = useHasUnseenReleaseNotes()
+  const [sponsorPreview, setSponsorPreview] = useState<{ src: string; alt: string } | null>(null)
+
+  useEffect(() => {
+    if (!sponsorPreview) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      // capture 阶段拦截并截断，避免设置弹窗的容器级 Esc 监听把整个弹窗一起关掉
+      event.stopPropagation()
+      setSponsorPreview(null)
+    }
+
+    document.addEventListener("keydown", handleKeyDown, true)
+    return () => document.removeEventListener("keydown", handleKeyDown, true)
+  }, [sponsorPreview])
 
   return (
     <div>
@@ -70,6 +99,9 @@ const AboutPage: React.FC<AboutPageProps> = ({ onOpenReleaseNotes }) => {
                 onClick={onOpenReleaseNotes}>
                 <SparkleIcon size={14} color="currentColor" />
                 <span>{t("releaseNotesOpen")}</span>
+                {hasUnseenReleaseNotes ? (
+                  <span className="about-release-notes-unread" aria-hidden="true" />
+                ) : null}
               </button>
             ) : null}
           </div>
@@ -79,96 +111,16 @@ const AboutPage: React.FC<AboutPageProps> = ({ onOpenReleaseNotes }) => {
         </div>
       </div>
 
-      <div className="about-section-title">{t("rateAndReview")}</div>
-      <div className="about-links-grid reviews-grid">
-        {/* Chrome Store */}
-        <a
-          href={STORE_LINKS.chrome}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="about-link-card"
-          style={{ "--card-color": "#4285F4" } as React.CSSProperties}>
-          <div className="about-link-header">
-            <ChromeIcon size={24} color="var(--card-color)" />
-            <span style={{ fontWeight: 600 }}>{t("chromeStore")}</span>
-          </div>
-          <button type="button" className="about-link-btn">
-            {t("reviewBtn")}
-          </button>
-        </a>
-
-        {/* Edge Add-ons */}
-        <a
-          href={STORE_LINKS.edge}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="about-link-card"
-          style={{ "--card-color": "#0078D7" } as React.CSSProperties}>
-          <div className="about-link-header">
-            <EdgeIcon size={24} />
-            <span style={{ fontWeight: 600 }}>{t("edgeAddons")}</span>
-          </div>
-          <button type="button" className="about-link-btn">
-            {t("reviewBtn")}
-          </button>
-        </a>
-
-        {/* Firefox Add-on */}
-        <a
-          href={STORE_LINKS.firefox}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="about-link-card"
-          style={{ "--card-color": "#FF7139" } as React.CSSProperties}>
-          <div className="about-link-header">
-            <FirefoxIcon size={24} color="var(--card-color)" />
-            <span style={{ fontWeight: 600 }}>{t("firefoxAddons")}</span>
-          </div>
-          <button type="button" className="about-link-btn">
-            {t("reviewBtn")}
-          </button>
-        </a>
-
-        {/* GreasyFork */}
-        <a
-          href={STORE_LINKS.greasyFork}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="about-link-card"
-          style={{ "--card-color": "#4b5563" } as React.CSSProperties}>
-          <div className="about-link-header">
-            <GreasyForkIcon size={24} color="currentColor" />
-            <span style={{ fontWeight: 600, color: "var(--gh-text)" }}>{t("greasyFork")}</span>
-          </div>
-          <button type="button" className="about-link-btn">
-            {t("reviewBtn")}
-          </button>
-        </a>
-
-        {/* ScriptCat */}
-        <a
-          href={STORE_LINKS.scriptCat}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="about-link-card"
-          style={{ "--card-color": "#1296db" } as React.CSSProperties}>
-          <div className="about-link-header">
-            <ScriptCatIcon size={24} color="var(--card-color)" />
-            <span style={{ fontWeight: 600, color: "var(--gh-text)" }}>{t("scriptCat")}</span>
-          </div>
-          <button type="button" className="about-link-btn">
-            {t("reviewBtn")}
-          </button>
-        </a>
-      </div>
-
       <div className="about-section-title">{t("communityAndSupport")}</div>
       <div className="about-community-motto">"{t("communityMotto")}"</div>
 
-      <div className="about-links-grid community-grid">
+      <div
+        className={`about-links-grid community-grid${
+          donateChannels.kind === "zh-CN" ? " community-grid-triple" : ""
+        }`}>
         {/* GitHub Link */}
         <a
-          href="https://github.com/urzeye/ophel"
+          href={GITHUB_REPO_URL}
           target="_blank"
           rel="noopener noreferrer"
           className="about-link-card"
@@ -186,31 +138,32 @@ const AboutPage: React.FC<AboutPageProps> = ({ onOpenReleaseNotes }) => {
           </button>
         </a>
 
-        {/* Ko-fi Link */}
-        <a
-          href="https://ko-fi.com/urzeye"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="about-link-card kofi-card"
-          style={{ "--card-color": "#FF5E5B" } as React.CSSProperties}>
-          <div className="about-link-header" style={{ color: "var(--card-color)" }}>
-            <KofiIcon size={22} color="var(--card-color)" />
-            <span style={{ fontWeight: 600 }}>{t("kofiSupport")}</span>
-          </div>
-          <div className="about-link-desc" style={{ color: "var(--gh-text-secondary)" }}>
-            {t("kofiDesc")}
-          </div>
-          <button type="button" className="about-link-btn">
-            <span className="about-btn-inner">
-              <KofiIcon size={14} color="currentColor" />
-              {t("kofiBtn")}
-            </span>
-          </button>
-        </a>
+        {donateChannels.kind === "kofi" ? (
+          <a
+            href={donateChannels.kofiUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="about-link-card kofi-card"
+            style={{ "--card-color": "#FF5E5B" } as React.CSSProperties}>
+            <div className="about-link-header" style={{ color: "var(--card-color)" }}>
+              <KofiIcon size={22} color="var(--card-color)" />
+              <span style={{ fontWeight: 600 }}>{t("kofiSupport")}</span>
+            </div>
+            <div className="about-link-desc" style={{ color: "var(--gh-text-secondary)" }}>
+              {t("kofiDesc")}
+            </div>
+            <button type="button" className="about-link-btn">
+              <span className="about-btn-inner">
+                <KofiIcon size={14} color="currentColor" />
+                {t("kofiBtn")}
+              </span>
+            </button>
+          </a>
+        ) : null}
 
         {/* Website Link */}
         <a
-          href="https://github.com/urzeye/ophel"
+          href={OPHEL_WEBSITE_URL}
           target="_blank"
           rel="noopener noreferrer"
           className="about-link-card"
@@ -249,6 +202,166 @@ const AboutPage: React.FC<AboutPageProps> = ({ onOpenReleaseNotes }) => {
               <DiscordIcon size={14} color="currentColor" />
               {t("joinDiscord")}
             </span>
+          </button>
+        </a>
+      </div>
+
+      {donateChannels.kind === "zh-CN" ? (
+        <section className="about-sponsor-block">
+          <div className="about-section-title">{t("sponsorSupport")}</div>
+          <p className="about-sponsor-desc">{t("sponsorDesc")}</p>
+          <div className="about-sponsor-channels">
+            <a
+              href={AFDIAN_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="about-sponsor-afdian-card">
+              <span className="about-sponsor-afdian-visual" aria-hidden="true">
+                <span className="about-sponsor-afdian-icon">
+                  <AfdianIcon size={24} />
+                </span>
+                <span className="about-sponsor-afdian-desc">{t("afdianCardDesc")}</span>
+                <span className="about-sponsor-afdian-cta">
+                  afdian.com
+                  <ExternalLinkIcon size={12} />
+                </span>
+              </span>
+              <span className="about-sponsor-afdian-title">{t("afdianSupport")}</span>
+            </a>
+            <div className="about-sponsor-qrs">
+              <figure className="about-sponsor-qr">
+                <button
+                  type="button"
+                  className="about-sponsor-qr-zoom"
+                  onClick={() =>
+                    setSponsorPreview({
+                      src: resolveSupportImageUrl(donateChannels.wechatImagePath),
+                      alt: t("wechatPay"),
+                    })
+                  }>
+                  <img
+                    src={resolveSupportImageUrl(donateChannels.wechatImagePath)}
+                    alt={t("wechatPay")}
+                    className="about-sponsor-qr-img"
+                  />
+                </button>
+                <figcaption>{t("wechatPay")}</figcaption>
+              </figure>
+              <figure className="about-sponsor-qr">
+                <button
+                  type="button"
+                  className="about-sponsor-qr-zoom"
+                  onClick={() =>
+                    setSponsorPreview({
+                      src: resolveSupportImageUrl(donateChannels.alipayImagePath),
+                      alt: t("alipayPay"),
+                    })
+                  }>
+                  <img
+                    src={resolveSupportImageUrl(donateChannels.alipayImagePath)}
+                    alt={t("alipayPay")}
+                    className="about-sponsor-qr-img"
+                  />
+                </button>
+                <figcaption>{t("alipayPay")}</figcaption>
+              </figure>
+            </div>
+          </div>
+          {sponsorPreview ? (
+            <div
+              className="about-sponsor-lightbox"
+              role="dialog"
+              aria-modal="true"
+              aria-label={sponsorPreview.alt}
+              onClick={() => setSponsorPreview(null)}>
+              <button
+                type="button"
+                className="about-sponsor-lightbox-close"
+                aria-label={t("close")}
+                autoFocus
+                onClick={() => setSponsorPreview(null)}>
+                <ClearIcon size={18} />
+              </button>
+              <img src={sponsorPreview.src} alt={sponsorPreview.alt} />
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      <div className="about-section-title">{t("rateAndReview")}</div>
+      <div className="about-links-grid reviews-grid">
+        {/* Chrome Store */}
+        <a
+          href={STORE_LINKS.chrome}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="about-link-card">
+          <div className="about-link-header">
+            <ChromeIcon size={24} />
+            <span style={{ fontWeight: 600 }}>{t("chromeStore")}</span>
+          </div>
+          <button type="button" className="about-link-btn">
+            {t("reviewBtn")}
+          </button>
+        </a>
+
+        {/* Edge Add-ons */}
+        <a
+          href={STORE_LINKS.edge}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="about-link-card">
+          <div className="about-link-header">
+            <EdgeIcon size={24} />
+            <span style={{ fontWeight: 600 }}>{t("edgeAddons")}</span>
+          </div>
+          <button type="button" className="about-link-btn">
+            {t("reviewBtn")}
+          </button>
+        </a>
+
+        {/* Firefox Add-on */}
+        <a
+          href={STORE_LINKS.firefox}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="about-link-card">
+          <div className="about-link-header">
+            <FirefoxIcon size={24} color="#FF7139" />
+            <span style={{ fontWeight: 600 }}>{t("firefoxAddons")}</span>
+          </div>
+          <button type="button" className="about-link-btn">
+            {t("reviewBtn")}
+          </button>
+        </a>
+
+        {/* GreasyFork */}
+        <a
+          href={STORE_LINKS.greasyFork}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="about-link-card">
+          <div className="about-link-header">
+            <GreasyForkIcon size={24} color="currentColor" />
+            <span style={{ fontWeight: 600, color: "var(--gh-text)" }}>{t("greasyFork")}</span>
+          </div>
+          <button type="button" className="about-link-btn">
+            {t("reviewBtn")}
+          </button>
+        </a>
+
+        {/* ScriptCat */}
+        <a
+          href={STORE_LINKS.scriptCat}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="about-link-card">
+          <div className="about-link-header">
+            <ScriptCatIcon size={24} color="#1296db" />
+            <span style={{ fontWeight: 600, color: "var(--gh-text)" }}>{t("scriptCat")}</span>
+          </div>
+          <button type="button" className="about-link-btn">
+            {t("reviewBtn")}
           </button>
         </a>
       </div>

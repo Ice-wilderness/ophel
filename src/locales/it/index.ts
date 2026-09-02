@@ -11,6 +11,11 @@ export const it = {
   communityMotto: "Se vuoi andare veloce, vai da solo. Se vuoi andare lontano, andiamo insieme.",
   welcomeJoin: "Benvenuto a",
   agreeButton: "Capisco e sono d'accordo",
+  disclaimerAffiliation:
+    "Questa estensione non è affiliata ufficialmente né approvata dai siti supportati; tutti i marchi e i nomi appartengono ai rispettivi proprietari.",
+  disclaimerAgreeNote:
+    "Facendo clic sul pulsante qui sopra, dichiari di aver letto, compreso e accettato quanto sopra.",
+  disclaimerContribute: "Contribuisci",
 
   tabPrompts: "Suggerimenti",
   tabSettings: "Impostazioni",
@@ -250,7 +255,7 @@ export const it = {
   // ======== About Page ========
   version: "Versione",
   aboutDescription:
-    "{appName} è un'estensione del browser progettata per piattaforme AI come Gemini, ChatGPT, Claude, AI Studio e Grok. Potenzia il tuo flusso di lavoro con gestione delle conversazioni, strutture intelligenti e una libreria di prompt, offrendo al contempo utilità come ripristino della cronologia di lettura, ancoraggi bidirezionali, rimozione della filigrana, correzioni di formattazione e blocco dei modelli. Con opzioni di personalizzazione complete per temi e interfaccia utente, {appName} garantisce un'esperienza di interazione IA più fluida ed efficiente.",
+    "{appName} è un'estensione del browser per piattaforme AI come ChatGPT, Claude, Gemini, DeepSeek e Doubao, espandibile ad altri siti tramite pacchetti di adattatori (regole JSON). Offre gestione delle conversazioni, esportazione multi-formato, outline intelligenti, ricerca globale e code di prompt, oltre a ripristino del progresso di lettura, rendering e copia delle formule, avvisi di completamento, blocco del modello e regolazione del layout. Con temi, modalità Zen e sincronizzazione WebDAV, rende le tue interazioni con l'IA più fluide e piacevoli.",
   aboutSupportedPlatforms: "Piattaforme supportate",
   aboutSupportedPlatformsDesc:
     "Attualmente copre le piattaforme AI {count}, mantenute sincronizzate con il rilevamento dei popup e l'accesso rapido.",
@@ -267,7 +272,7 @@ export const it = {
   scriptCat: "ScriptCat",
   reviewBtn: "Recensione",
   starBtn: "Stella",
-  githubDesc: "Visualizza il codice sorgente, segnala problemi o contribuisci",
+  githubDesc: "Metti una stella al repository per sostenere lo sviluppo",
   giveStar: "Stella su GitHub",
   projectWebsite: "Sito ufficiale",
   websiteDesc: "Visualizza documentazione, guide e altro ancora",
@@ -1960,7 +1965,14 @@ export const it = {
   discordDesc:
     "Unisciti alla nostra community per chattare con altri utenti, fornire feedback e ricevere gli ultimi aggiornamenti",
   joinDiscord: "Unisciti a Discord",
+  joinDiscordCommunity: "Unisciti a Discord",
   kofiSupport: "Comprami un caffè",
   kofiDesc: "Se Ophel ti è utile, considera l'acquisto di un caffè per supportare lo sviluppatore",
   kofiBtn: "Supporto su Ko-fi",
+  sponsorSupport: "Sostieni il progetto",
+  sponsorDesc: "Se Ophel ti è utile, considera di sostenere lo sviluppo",
+  wechatPay: "WeChat Pay",
+  alipayPay: "Alipay",
+  afdianSupport: "Afdian",
+  afdianCardDesc: "Sostieni lo sviluppo continuo",
 }

@@ -281,6 +281,9 @@
   background: transparent;
   color: var(--gh-text-secondary, #6b7280);
   font-size: 13px;
+  /* 固定行高与图标同高：line-height: normal 下 CJK 字体的行盒比拉丁字体高，
+     会导致同一控件在不同语言下高度不一致 */
+  line-height: 16px;
   cursor: pointer;
   transition:
     background 0.25s cubic-bezier(0.4, 0, 0.2, 1),
@@ -310,7 +313,9 @@
 
 .settings-theme-segmented.is-compact .settings-theme-segment {
   gap: 4px;
-  padding: 4px 2px;
+  /* 紧凑档只收窄横向间距和字号，垂直 padding 与 normal 保持一致，
+     避免语言切换触发密度降级时整个分段块变矮 */
+  padding: 6px 2px;
   font-size: 12px;
 }
 
@@ -512,6 +517,30 @@
 /* 带徽标的导航项：标签不再撑满整行，徽标紧随文字，读作一个整体 */
 .settings-nav-item-label.has-badge {
   flex: 0 1 auto;
+}
+
+/* 导航项未读红点（如“关于”有新版更新日志时），与面板 logo 红点同色 */
+.settings-nav-unread-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--gh-danger, #ef4444);
+  vertical-align: middle;
+  animation: gh-unread-dot-pulse 2s infinite;
+}
+
+@keyframes gh-unread-dot-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 0.8;
+  }
 }
 
 /* 导航项内的 beta 徽标使用更紧凑的尺寸，避免挤压菜单文字 */
@@ -3638,12 +3667,18 @@ html[data-theme="dark"] .about-link-card {
   letter-spacing: 0.2px;
 }
 
-html[data-theme="dark"] .about-link-card:not(.discord-card):not(.kofi-card) .about-link-btn {
-  /* Override default dark text color on specific cards so it's readable in dark mode */
+html[data-theme="dark"]
+  .community-grid
+  .about-link-card:not(.discord-card):not(.kofi-card)
+  .about-link-btn {
+  /* Override default dark text color on community cards so it's readable in dark mode */
   color: var(--gh-text);
   border-color: var(--gh-border);
 }
-html[data-theme="dark"] .about-link-card:not(.discord-card):not(.kofi-card):hover .about-link-btn {
+html[data-theme="dark"]
+  .community-grid
+  .about-link-card:not(.discord-card):not(.kofi-card):hover
+  .about-link-btn {
   color: #111827;
 }
 
@@ -3801,6 +3836,10 @@ html[data-theme="dark"] .about-privacy-banner {
   .about-platforms-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .about-links-grid.community-grid-triple {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -5318,12 +5357,228 @@ html[data-theme="dark"] .about-privacy-banner {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
+.about-links-grid.community-grid-triple {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .about-community-motto {
   font-size: 13px;
   color: var(--gh-text-secondary, #6b7280);
   margin-bottom: 16px;
   font-style: italic;
   text-align: center;
+}
+
+.about-sponsor-block {
+  margin-bottom: 32px;
+}
+
+.about-sponsor-desc {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--gh-text-secondary, #6b7280);
+}
+
+.about-sponsor-channels {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-inline: auto;
+  gap: 16px;
+}
+
+.about-sponsor-afdian-card,
+.about-sponsor-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.about-sponsor-afdian-card,
+.about-sponsor-qr {
+  padding: 10px;
+  border: 1px solid var(--gh-border, #e5e7eb);
+  border-radius: 12px;
+  background: var(--gh-card-bg, #fff);
+}
+
+.about-sponsor-qrs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+}
+
+.about-sponsor-qr figcaption {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gh-text, #1f2937);
+}
+
+/* 爱发电渠道卡：与扫码卡同宽同构（150 视觉区 + 底部名称），
+   本地渲染不依赖远程横幅，避免严格 CSP 站点拦截外链图片 */
+.about-sponsor-afdian-card {
+  width: 170px;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.about-sponsor-afdian-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(148, 108, 230, 0.45);
+  box-shadow: 0 8px 24px rgba(148, 108, 230, 0.14);
+}
+
+.about-sponsor-afdian-card:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--gh-primary, #4285f4) 38%, transparent);
+  outline-offset: 2px;
+}
+
+/* 视觉区与二维码图同尺寸，卡片本体与扫码卡保持一致；
+   品牌紫由图标单层承载，底色只留极淡提示避免区域显得空 */
+.about-sponsor-afdian-visual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 150px;
+  height: 150px;
+  border-radius: 8px;
+  background: linear-gradient(165deg, rgba(148, 108, 230, 0.08), rgba(148, 108, 230, 0.02));
+}
+
+.about-sponsor-afdian-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  /* 淡紫底 + 品牌紫 Logo，避免实色圆标在卡片视觉区显得过重 */
+  background: rgba(148, 108, 230, 0.12);
+  color: #946ce6;
+}
+
+.about-sponsor-afdian-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gh-text, #1f2937);
+}
+
+.about-sponsor-afdian-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--gh-text-secondary, #6b7280);
+}
+
+.about-sponsor-afdian-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #946ce6;
+}
+
+:host([data-theme="dark"]) .about-sponsor-afdian-icon,
+:host-context([data-gh-mode="dark"]) .about-sponsor-afdian-icon,
+html[data-theme="dark"] .about-sponsor-afdian-icon {
+  background: rgba(148, 108, 230, 0.22);
+  color: #c9b3f5;
+}
+
+:host([data-theme="dark"]) .about-sponsor-afdian-cta,
+:host-context([data-gh-mode="dark"]) .about-sponsor-afdian-cta,
+html[data-theme="dark"] .about-sponsor-afdian-cta {
+  color: #c9b3f5;
+}
+
+:host([data-theme="dark"]) .about-sponsor-afdian-card:hover,
+:host-context([data-gh-mode="dark"]) .about-sponsor-afdian-card:hover,
+html[data-theme="dark"] .about-sponsor-afdian-card:hover {
+  border-color: rgba(148, 108, 230, 0.55);
+  box-shadow: 0 8px 24px rgba(148, 108, 230, 0.2);
+}
+
+.about-sponsor-qr-zoom {
+  display: block;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: zoom-in;
+  border-radius: 8px;
+}
+
+.about-sponsor-qr-zoom:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--gh-primary, #4285f4) 38%, transparent);
+  outline-offset: 2px;
+}
+
+.about-sponsor-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 2000012;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: rgba(15, 23, 42, 0.72);
+  cursor: zoom-out;
+}
+
+.about-sponsor-lightbox img {
+  max-width: min(92vw, 420px);
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.42);
+}
+
+.about-sponsor-lightbox-close {
+  /* 遮罩固定为深色，关闭按钮跟随遮罩而不是主题变量 */
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.about-sponsor-lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.about-sponsor-lightbox-close:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  outline-offset: 2px;
+}
+
+.about-sponsor-qr-img {
+  display: block;
+  width: 150px;
+  height: 150px;
+  object-fit: contain;
+  background: #fff;
+  border-radius: 8px;
 }
 
 .about-btn-inner {

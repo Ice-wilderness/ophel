@@ -9,6 +9,10 @@ export const zhCN = {
   communityMotto: "一个人可以走得很快，但一群人可以走得更远。",
   welcomeJoin: "欢迎",
   agreeButton: "我已知晓并同意",
+  disclaimerAffiliation:
+    "本插件与所支持的站点无任何官方隶属或合作关系，相关商标与名称归各自所有者。",
+  disclaimerAgreeNote: "点击上方按钮即表示你已阅读、理解并同意以上内容。",
+  disclaimerContribute: "参与贡献",
 
   tabPrompts: "提示词",
   tabSettings: "设置",
@@ -267,14 +271,14 @@ export const zhCN = {
   // ======== 关于页面 ========
   version: "版本",
   aboutDescription:
-    "{appName} 是一款专为 Gemini、ChatGPT、Claude、AI Studio、Grok 等 AI 平台打造的浏览器增强扩展。它为您提供会话管理与导出、智能大纲导航、提示词指令库等效率工具，同时具备阅读进度恢复、双向锚点定位、水印移除、排版修复、公式复制及模型锁定等实用功能，并支持深度自定义主题与页面美化，让您的 AI 交互体验更加流畅愉悦。",
+    "{appName} 是一款专为 ChatGPT、Claude、Gemini、DeepSeek、豆包等 AI 平台打造的浏览器增强扩展，支持站点适配包（JSON 规则）扩展更多站点。它提供会话管理、多格式导出、智能大纲、全局搜索、提示词队列等效率工具，以及阅读进度恢复、公式渲染复制、完成提醒、模型锁定、页面布局调整等实用功能，并支持主题美化、禅模式与 WebDAV 多端同步，让您的 AI 交互更流畅愉悦。",
   aboutSupportedPlatforms: "支持平台",
   aboutSupportedPlatformsDesc:
     "当前已覆盖 {count} 个 AI 平台，和弹窗中的站点识别与快捷入口保持同步。",
   projectLinks: "项目链接",
   githubRepository: "GitHub 仓库",
   communityAndSupport: "社区与支持",
-  githubDesc: "查看源代码、提交问题或参与项目开发",
+  githubDesc: "给仓库点个 Star，鼓励项目继续维护",
   giveStar: "点个 Star",
   projectWebsite: "项目官网",
   websiteDesc: "查看详细文档、使用指南和更多信息",
@@ -1688,14 +1692,14 @@ export const zhCN = {
   queueBatchImportAction: "加入队列",
   queueBatchImportSuccess: "已加入队列 {count} 条",
   queueBatchImportEmpty: "没有可加入队列的提示词",
-  zenModeTitle: "禅模式 (Zen Mode)",
+  zenModeTitle: "禅模式",
   zenModeLabel: "启用禅模式",
   zenModeDesc: "隐藏侧边栏和导航元素，专注于当前对话（每个站点独立配置）",
   zenModeExitButton: "退出禅模式",
   zenModeExitButtonVisibleLabel: "显示退出按钮",
   zenModeExitButtonVisibleDesc:
     "关闭后会隐藏页面上的“退出禅模式”按钮；仍可通过快捷按钮或快捷键退出禅模式。",
-  cleanModeTitle: "净化模式 (Clean Mode)",
+  cleanModeTitle: "净化模式",
   cleanModeLabel: "启用净化模式",
   cleanModeDesc:
     "隐藏页面中的免责声明、广告、下载按钮等冗余元素，获得更干净的界面（每个站点独立配置）",
@@ -1815,7 +1819,14 @@ export const zhCN = {
   discordCommunity: "Discord 社区",
   discordDesc: "加入社区，与其他用户交流、反馈问题、获取最新动态",
   joinDiscord: "加入群组",
-  kofiSupport: "Buy Me a Coffee",
+  joinDiscordCommunity: "加入 Discord 社区",
+  kofiSupport: "赞助支持",
   kofiDesc: "如果 Ophel 对你有帮助，请考虑赞助一杯咖啡支持开发者",
   kofiBtn: "赞助支持",
+  sponsorSupport: "赞助支持",
+  sponsorDesc: "如果 Ophel 对你有帮助，欢迎赞助支持开发",
+  wechatPay: "微信赞赏",
+  alipayPay: "支付宝",
+  afdianSupport: "爱发电",
+  afdianCardDesc: "为持续开发充个电",
 }

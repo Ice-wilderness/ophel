@@ -11,6 +11,11 @@ export const en = {
   communityMotto: "If you want to go fast, go alone. If you want to go far, go together.",
   welcomeJoin: "Welcome to",
   agreeButton: "I Understand and Agree",
+  disclaimerAffiliation:
+    "This extension is not officially affiliated with or endorsed by any supported site; all trademarks and names belong to their respective owners.",
+  disclaimerAgreeNote:
+    "By clicking the button above, you acknowledge that you have read, understood, and agree to the above.",
+  disclaimerContribute: "Contribute",
 
   tabPrompts: "Prompts",
   tabSettings: "Settings",
@@ -242,7 +247,7 @@ export const en = {
   // ======== About Page ========
   version: "Version",
   aboutDescription:
-    "{appName} is a browser extension designed for AI platforms like Gemini, ChatGPT, Claude, AI Studio, and Grok. It empowers your workflow with conversation management, smart outlines, and a prompt library, while offering utilities like reading history restoration, bidirectional anchors, watermark removal, formatting fixes, and model locking. With comprehensive customization options for themes and UI, {appName} ensures a smoother and more efficient AI interaction experience.",
+    "{appName} is a browser extension for AI platforms like ChatGPT, Claude, Gemini, DeepSeek, and Doubao, extendable to more sites via adapter packs (JSON rules). It offers conversation management, multi-format export, smart outlines, global search, and prompt queues, plus reading progress restore, formula rendering and copy, completion alerts, model lock, and page layout tuning, with themes, Zen mode, and WebDAV sync to keep your AI interactions smooth and enjoyable.",
   aboutSupportedPlatforms: "Supported Platforms",
   aboutSupportedPlatformsDesc:
     "Currently covers {count} AI platforms, kept in sync with popup detection and quick access.",
@@ -258,7 +263,7 @@ export const en = {
   scriptCat: "ScriptCat",
   reviewBtn: "Review",
   starBtn: "Star",
-  githubDesc: "View source code, report issues, or contribute",
+  githubDesc: "Star the repository to support ongoing development",
   giveStar: "Star on GitHub",
   projectWebsite: "Official Website",
   websiteDesc: "View documentation, guides, and more",
@@ -1889,7 +1894,14 @@ Please output the optimized code block directly, followed by a brief summary of 
   discordDesc:
     "Join our community to chat with other users, provide feedback, and get the latest updates",
   joinDiscord: "Join Discord",
+  joinDiscordCommunity: "Join Discord",
   kofiSupport: "Buy Me a Coffee",
   kofiDesc: "If Ophel is helpful to you, please consider buying a coffee to support the developer",
   kofiBtn: "Support on Ko-fi",
+  sponsorSupport: "Support the project",
+  sponsorDesc: "If Ophel is helpful to you, consider supporting ongoing development",
+  wechatPay: "WeChat Pay",
+  alipayPay: "Alipay",
+  afdianSupport: "Afdian",
+  afdianCardDesc: "Fuel ongoing development",
 }

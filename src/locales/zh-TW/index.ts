@@ -10,6 +10,10 @@ export const zhTW = {
   communityMotto: "一個人可以走得很快，但一群人可以走得更遠。",
   welcomeJoin: "歡迎",
   agreeButton: "我已知曉並同意",
+  disclaimerAffiliation:
+    "本擴充功能與所支援的站點無任何官方隸屬或合作關係，相關商標與名稱歸各自擁有者。",
+  disclaimerAgreeNote: "點擊上方按鈕即表示你已閱讀、理解並同意以上內容。",
+  disclaimerContribute: "參與貢獻",
 
   tabPrompts: "提示詞",
   tabSettings: "設置",
@@ -173,13 +177,13 @@ export const zhTW = {
   // ======== 關於頁面 ========
   version: "版本",
   aboutDescription:
-    "{appName} 一款專為 Gemini、ChatGPT、Claude、AI Studio、Grok 等 AI 平台打造的瀏覽器增強擴充功能。它為您提供會話管理與匯出、智慧大綱導航、提示詞指令庫等效率工具，同時具備閱讀進度恢復、雙向錨點定位、浮水印移除、排版修復、公式複製及模型鎖定等實用功能，並支援深度自定義主題與頁面美化，讓您的 AI 互動體驗更加流暢愉悅。",
+    "{appName} 是一款專為 ChatGPT、Claude、Gemini、DeepSeek、豆包等 AI 平台打造的瀏覽器增強擴充功能，支援站點適配包（JSON 規則）擴展更多站點。它提供會話管理、多格式匯出、智慧大綱、全域搜尋、提示詞佇列等效率工具，以及閱讀進度恢復、公式渲染複製、完成提醒、模型鎖定、頁面版面調整等實用功能，並支援主題美化、禪模式與 WebDAV 多端同步，讓您的 AI 互動更流暢愉悅。",
   aboutSupportedPlatforms: "支援平台",
   aboutSupportedPlatformsDesc:
     "目前已涵蓋 {count} 個 AI 平台，並與彈出視窗中的站點識別與快捷入口保持同步。",
   projectLinks: "專案連結",
   githubRepository: "GitHub 儲存庫",
-  githubDesc: "檢視原始碼、提交問題或參與專案開發",
+  githubDesc: "幫專案點個 Star，鼓勵持續維護",
   giveStar: "按個 Star",
   projectWebsite: "專案官網",
   websiteDesc: "檢視詳細文件、使用指南和更多資訊",
@@ -1689,14 +1693,14 @@ export const zhTW = {
   queueBatchImportAction: "加入隊列",
   queueBatchImportSuccess: "已加入隊列 {count} 條",
   queueBatchImportEmpty: "沒有可加入隊列的提示詞",
-  zenModeTitle: "禪模式 (Zen Mode)",
+  zenModeTitle: "禪模式",
   zenModeLabel: "啟用禪模式",
   zenModeDesc: "隱藏側邊欄和導航元素，專注於當前對話（每個站點獨立配置）",
   zenModeExitButton: "退出禪模式",
   zenModeExitButtonVisibleLabel: "顯示退出按鈕",
   zenModeExitButtonVisibleDesc:
     "關閉後會隱藏頁面上的「退出禪模式」按鈕；仍可透過快捷按鈕或快捷鍵退出禪模式。",
-  cleanModeTitle: "淨化模式 (Clean Mode)",
+  cleanModeTitle: "淨化模式",
   cleanModeLabel: "啟用淨化模式",
   cleanModeDesc:
     "隱藏頁面中的免責聲明、廣告、下載按鈕等冗餘元素，獲得更乾淨的介面（每個站點獨立配置）",
@@ -1816,7 +1820,14 @@ export const zhTW = {
   discordCommunity: "Discord 社群",
   discordDesc: "加入社群，與其他用戶交流、反饋問題、獲取最新動態",
   joinDiscord: "加入群組",
-  kofiSupport: "Buy Me a Coffee",
+  joinDiscordCommunity: "加入 Discord 社群",
+  kofiSupport: "贊助支持",
   kofiDesc: "如果 Ophel 對你有幫助，請考慮贊助一杯咖啡支持開發者",
   kofiBtn: "贊助支持",
+  sponsorSupport: "贊助支持",
+  sponsorDesc: "如果 Ophel 對你有幫助，歡迎贊助支持開發",
+  wechatPay: "微信讚賞",
+  alipayPay: "支付寶",
+  afdianSupport: "愛發電",
+  afdianCardDesc: "為持續開發充個電",
 }
