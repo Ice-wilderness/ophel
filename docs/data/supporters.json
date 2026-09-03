@@ -75,7 +75,7 @@
   },
   {
     "name": "Will",
-    "avatar": "https://pic1.afdiancdn.com/default/avatar/avatar-orange.png?imageView2/1/w/120/h/120",
+    "avatar": "https://img.remit.ee/api/file/BQACAgUAAyEGAASHRsPbAAEaaHtqmS5_svvGLGrJELBucI_wDPrrwgACTykAAm9ByFRanhipsu36yT0E.jpg",
     "source": "afdian",
     "date": "2026-06-09",
     "remark": "￥66.66"
@@ -100,5 +100,12 @@
     "source": "wechat",
     "date": "2026-07-22",
     "remark": "￥3"
+  },
+  {
+    "name": "**然",
+    "avatar": "https://img.remit.ee/api/file/BQACAgUAAyEGAASHRsPbAAEaaGhqmS3ONp0Nji535vNTkf7njuv7ugACNSkAAm9ByFTGm8MeNRIAAak9BA.jpg",
+    "source": "alipay",
+    "date": "2026-08-23",
+    "remark": "￥66"
   }
 ]
