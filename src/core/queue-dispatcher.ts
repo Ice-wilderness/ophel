@@ -16,6 +16,8 @@ import {
 import { useSettingsStore } from "~stores/settings-store"
 import type { QueueItem } from "~stores/queue-store"
 import { useQueueStore } from "~stores/queue-store"
+import { t } from "~utils/i18n"
+import { showToast } from "~utils/toast"
 
 export class QueueDispatcher {
   private adapter: SiteAdapter
@@ -24,6 +26,7 @@ export class QueueDispatcher {
   private idleCount = 0 // 连续空闲计数
   private isDispatching = false
   private postSubmitWaitPromise: Promise<void> | null = null
+  private postSubmitAbortController: AbortController | null = null
   private readonly IDLE_THRESHOLD = 2 // 需要连续 N 次检测到空闲才发送
   private readonly POLL_TASK_NAME = "queue-dispatcher"
   private readonly POLL_INTERVAL = 1000 // 轮询间隔 (ms)
@@ -57,6 +60,8 @@ export class QueueDispatcher {
   stop(): void {
     this.pollingTasks.stop(this.POLL_TASK_NAME)
     this.idleCount = 0
+    // 中断提交后等待轮询，避免停止后仍在后台跑满 10 分钟
+    this.postSubmitAbortController?.abort()
   }
 
   /**
@@ -211,13 +216,15 @@ export class QueueDispatcher {
     const itemContent = this.normalizeContent(item.content)
     const visibleItemContent = this.normalizeContent(stripQuickQuoteMarkers(item.content))
 
-    return [itemContent, visibleItemContent].some(
-      (content) =>
-        content &&
-        (editorContent === content ||
-          editorContent.includes(content) ||
-          content.includes(editorContent)),
-    )
+    // 必须精确相等：双向 includes 会把用户发送失败后继续编辑的内容
+    // 误判为“队列项仍在编辑器”，导致恢复逻辑把用户正在输入的内容重发出去
+    const candidates = [itemContent, visibleItemContent]
+    if (candidates.some((content) => content && editorContent === content)) return true
+
+    // 段落化插入（ChatGPT/Grok 的 <p> 结构）读回 textContent 时换行丢失，
+    // 空格折叠后多行内容永远失配；再按“去掉全部空白”的压缩形式比较一次
+    const editorSquashed = editorContent.replace(/ /g, "")
+    return candidates.some((content) => content && editorSquashed === content.replace(/ /g, ""))
   }
 
   private completeItem(itemId: string): void {
@@ -233,7 +240,12 @@ export class QueueDispatcher {
     }
 
     if (!this.isItemContentInEditor(item)) {
-      // 输入框已清空或内容已被用户处理，避免永久卡在 sending。
+      // 编辑器已清空：可能是站点已消费或用户手动清空，保持静默丢弃。
+      // 编辑器里还有内容但不匹配：说明用户改过内容，为避免误发送而丢弃，
+      // 但必须提示用户这条队列项并未发出，不能伪装成已发送
+      if (this.promptManager.getCurrentEditorContent().trim()) {
+        showToast(t("queueEditedNotSent"))
+      }
       this.completeItem(item.id)
       this.idleCount = 0
       return
@@ -293,14 +305,15 @@ export class QueueDispatcher {
     return `${text.length}:${text.slice(Math.max(0, text.length - 400))}`
   }
 
-  private async waitForConversationIdleAfterSubmit(): Promise<void> {
+  private async waitForConversationIdleAfterSubmit(signal: AbortSignal): Promise<void> {
     const startedAt = Date.now()
     let lastActivityAt = startedAt
     let lastSignature = this.getConversationActivitySignature()
     let sawGenerating = this.adapter.isGenerating()
 
-    while (Date.now() - startedAt < this.POST_SUBMIT_MAX_WAIT_MS) {
+    while (!signal.aborted && Date.now() - startedAt < this.POST_SUBMIT_MAX_WAIT_MS) {
       await new Promise((resolve) => setTimeout(resolve, 500))
+      if (signal.aborted) return
 
       const now = Date.now()
       const isGenerating = this.adapter.isGenerating()
@@ -333,12 +346,19 @@ export class QueueDispatcher {
   private startPostSubmitWait(): void {
     if (this.postSubmitWaitPromise) return
 
-    this.postSubmitWaitPromise = this.waitForConversationIdleAfterSubmit()
+    this.postSubmitAbortController?.abort()
+    const controller = new AbortController()
+    this.postSubmitAbortController = controller
+
+    this.postSubmitWaitPromise = this.waitForConversationIdleAfterSubmit(controller.signal)
       .catch((error) => {
         console.error("[QueueDispatcher] 等待回复结束失败:", error)
       })
       .finally(() => {
         this.postSubmitWaitPromise = null
+        if (this.postSubmitAbortController === controller) {
+          this.postSubmitAbortController = null
+        }
         this.idleCount = 0
       })
   }

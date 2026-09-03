@@ -546,16 +546,21 @@ export class ZaiAdapter extends SiteAdapter {
     if (!container) return outline
 
     const userQuerySelector = this.getUserQuerySelector()
-    if (!userQuerySelector) return outline
+    // 仅在需要用户提问时，缺失选择器才阻断；纯标题大纲不应整表丢弃
+    if (!userQuerySelector && includeUserQueries) return outline
 
     const headingSelectors: string[] = []
     for (let i = 1; i <= maxLevel; i++) {
       headingSelectors.push(`h${i}`)
     }
 
-    const combinedSelector = `${userQuerySelector}, ${headingSelectors.join(", ")}`
+    const combinedSelector = userQuerySelector
+      ? `${userQuerySelector}, ${headingSelectors.join(", ")}`
+      : headingSelectors.join(", ")
 
-    const rawUserQueries = Array.from(container.querySelectorAll(userQuerySelector))
+    const rawUserQueries = userQuerySelector
+      ? Array.from(container.querySelectorAll(userQuerySelector))
+      : []
     const userQueries = this.collectTopLevelBlocks(rawUserQueries).filter(
       (element) => !this.shouldSkipOutlineElement(element),
     )
@@ -563,7 +568,7 @@ export class ZaiAdapter extends SiteAdapter {
 
     const allElements = Array.from(container.querySelectorAll(combinedSelector)).filter(
       (element) => {
-        if (element.matches(userQuerySelector)) {
+        if (userQuerySelector && element.matches(userQuerySelector)) {
           return userQuerySet.has(element)
         }
         return !this.shouldSkipOutlineElement(element)
@@ -608,17 +613,19 @@ export class ZaiAdapter extends SiteAdapter {
           return this.calculateRangeWordCount(startEl, nextEl, container)
         }
 
-        const allUserQueries = container.querySelectorAll(userQuerySelector)
-        let foundCurrent = false
+        const allUserQueries = userQuerySelector
+          ? container.querySelectorAll(userQuerySelector)
+          : []
         let nextUserQuery: Element | null = null
 
         for (const uq of Array.from(allUserQueries)) {
-          if (foundCurrent) {
+          // startEl 是 AI 回复内的标题，按文档顺序找其后的第一个用户提问
+          const followsStart = Boolean(
+            startEl.compareDocumentPosition(uq) & Node.DOCUMENT_POSITION_FOLLOWING,
+          )
+          if (followsStart) {
             nextUserQuery = uq
             break
-          }
-          if (uq === startEl || uq.contains(startEl) || startEl.contains(uq)) {
-            foundCurrent = true
           }
         }
 
@@ -640,7 +647,7 @@ export class ZaiAdapter extends SiteAdapter {
 
     allElements.forEach((element, index) => {
       const tagName = element.tagName.toLowerCase()
-      const isUserQuery = element.matches(userQuerySelector)
+      const isUserQuery = userQuerySelector ? element.matches(userQuerySelector) : false
       const isHeading = /^h[1-6]$/.test(tagName)
 
       let shouldCollect = false
@@ -686,7 +693,9 @@ export class ZaiAdapter extends SiteAdapter {
 
         for (let i = index + 1; i < allElements.length; i++) {
           const candidate = allElements[i]
-          const candidateIsUserQuery = candidate.matches(userQuerySelector)
+          const candidateIsUserQuery = userQuerySelector
+            ? candidate.matches(userQuerySelector)
+            : false
 
           if (candidateIsUserQuery) {
             nextBoundaryEl = candidate

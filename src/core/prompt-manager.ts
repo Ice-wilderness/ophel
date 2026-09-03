@@ -35,8 +35,17 @@ export class PromptManager {
     // 等待 hydration 完成
     if (!usePromptsStore.getState()._hasHydrated) {
       await new Promise<void>((resolve) => {
+        // 超时兜底：存储异常时 _hasHydrated 可能永不置真，
+        // 不能让初始化链路永久挂起（与 ReadingHistoryManager 同一模式）
+        const timeoutId = window.setTimeout(() => {
+          console.warn("[PromptManager] hydration 等待超时，使用当前状态继续初始化")
+          unsubscribe()
+          resolve()
+        }, 3000)
+
         const unsubscribe = usePromptsStore.subscribe((state) => {
           if (state._hasHydrated) {
+            window.clearTimeout(timeoutId)
             unsubscribe()
             resolve()
           }
@@ -71,7 +80,8 @@ export class PromptManager {
     getPromptsStore().renameCategory(oldName, newName)
   }
 
-  deleteCategory(name: string, defaultCategoryName: string = "未分类") {
+  // 空串表示未分类，由展示层本地化渲染，避免把中文写进用户数据
+  deleteCategory(name: string, defaultCategoryName: string = "") {
     getPromptsStore().deleteCategory(name, defaultCategoryName)
   }
 

@@ -52,6 +52,7 @@ import {
   readRemoteConfigAutoUpdate,
 } from "~utils/persisted-settings"
 import { localStorage, type Settings } from "~utils/storage"
+import { btoaUtf8 } from "~utils/encoding"
 
 /**
  * Ophel - Background Service Worker
@@ -566,6 +567,29 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
     case MSG_PROXY_FETCH:
       ;(async () => {
         try {
+          // 仅允许代理公网 http(s) 资源，避免被用来探测 localhost / 内网服务
+          const target = new URL(message.url)
+          if (target.protocol !== "http:" && target.protocol !== "https:") {
+            throw new Error(`Blocked proxy fetch: unsupported protocol ${target.protocol}`)
+          }
+          const hostname = target.hostname.toLowerCase()
+          if (
+            hostname === "localhost" ||
+            // URL API 的 IPv6 hostname 带方括号：[::1]
+            hostname === "[::1]" ||
+            hostname === "[::]" ||
+            hostname === "::1" ||
+            hostname === "0.0.0.0" ||
+            hostname.endsWith(".local") ||
+            /^127\./.test(hostname) ||
+            /^10\./.test(hostname) ||
+            /^192\.168\./.test(hostname) ||
+            /^169\.254\./.test(hostname) ||
+            /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
+          ) {
+            throw new Error(`Blocked proxy fetch: private address ${hostname}`)
+          }
+
           // 确保规则已设置
           const rules = await chrome.declarativeNetRequest.getDynamicRules()
           if (!rules || rules.length === 0 || !rules.find((r) => r.id === 1001)) {
@@ -606,7 +630,7 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
 
           // 添加 Basic Auth
           if (auth?.username && auth?.password) {
-            const credentials = btoa(`${auth.username}:${auth.password}`)
+            const credentials = btoaUtf8(`${auth.username}:${auth.password}`)
             fetchHeaders["Authorization"] = `Basic ${credentials}`
           }
 
@@ -898,15 +922,26 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
             })
           }
 
-          // 查找并刷新所有 claude.ai 标签页（而非发送消息的页面）
-          const claudeTabs = await chrome.tabs.query({ url: "*://claude.ai/*" })
-          for (const tab of claudeTabs) {
-            if (tab.id) {
-              await chrome.tabs.reload(tab.id)
+          // 优先只刷新发起请求的 Claude 标签页，避免打断其他标签页的浏览与草稿；
+          // 消息来自选项页等非 Claude 页面时，回退到刷新全部 Claude 标签页
+          const senderClaudeTabId = sender.tab?.url?.startsWith("https://claude.ai/")
+            ? sender.tab.id
+            : undefined
+          let reloadedTabs = 0
+          if (senderClaudeTabId) {
+            await chrome.tabs.reload(senderClaudeTabId)
+            reloadedTabs = 1
+          } else {
+            const claudeTabs = await chrome.tabs.query({ url: "*://claude.ai/*" })
+            for (const tab of claudeTabs) {
+              if (tab.id) {
+                await chrome.tabs.reload(tab.id)
+              }
             }
+            reloadedTabs = claudeTabs.length
           }
 
-          sendResponse({ success: true, reloadedTabs: claudeTabs.length })
+          sendResponse({ success: true, reloadedTabs })
         } catch (err) {
           console.error("Set Claude SessionKey failed:", err)
           sendResponse({ success: false, error: (err as Error).message })
@@ -989,10 +1024,19 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
           }
 
           // 6. 跳转到首页 (而非刷新)
-          const claudeTabs = await chrome.tabs.query({ url: "*://claude.ai/*" })
-          for (const tab of claudeTabs) {
-            if (tab.id) {
-              await chrome.tabs.update(tab.id, { url: "https://claude.ai/" })
+          // 优先只处理发起请求的 Claude 标签页，避免丢弃其他标签页的会话与草稿；
+          // 消息来自非 Claude 页面时回退到全量处理
+          const senderClaudeTabId = sender.tab?.url?.startsWith("https://claude.ai/")
+            ? sender.tab.id
+            : undefined
+          if (senderClaudeTabId) {
+            await chrome.tabs.update(senderClaudeTabId, { url: "https://claude.ai/" })
+          } else {
+            const claudeTabs = await chrome.tabs.query({ url: "*://claude.ai/*" })
+            for (const tab of claudeTabs) {
+              if (tab.id) {
+                await chrome.tabs.update(tab.id, { url: "https://claude.ai/" })
+              }
             }
           }
 

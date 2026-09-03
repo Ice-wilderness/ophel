@@ -287,7 +287,33 @@ export const QueueOverlay: React.FC<QueueOverlayProps> = ({ adapter, dispatcher 
     if (!isExpanded || isBatchDialogOpen) return
 
     const handleClickOutside = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+      const panel = panelRef.current
+      if (!panel) return
+
+      // Shadow DOM 内事件冒泡到 document 时会被 retarget 为 shadow host，
+      // 必须通过 composedPath 穿透判断真实点击路径是否在面板内
+      const path = typeof e.composedPath === "function" ? e.composedPath() : []
+      if (path.length > 0) {
+        const isInside = path.some((node) => {
+          if (node === panel || (node instanceof Node && panel.contains(node))) {
+            return true
+          }
+          if (
+            node instanceof HTMLElement &&
+            node.closest?.(".gh-dialog-overlay, .gh-queue-batch-dialog, .gh-queue-capsule")
+          ) {
+            return true
+          }
+          return false
+        })
+        if (!isInside) {
+          setIsExpanded(false)
+        }
+        return
+      }
+
+      const target = e.target as Node | null
+      if (target && !panel.contains(target)) {
         setIsExpanded(false)
       }
     }
@@ -492,11 +518,9 @@ export const QueueOverlay: React.FC<QueueOverlayProps> = ({ adapter, dispatcher 
 
   if (!position) return null
 
-  // 因为定位点(top, left)标志着组件要显示的右下角（紧贴输入框上方右侧）
-  // 所以需要用 translate(-100%, -100%) 把组件从锚定点推上去靠左
-  // 为了保证能读取到 CSS 主题变量，我们需要找到含有主题类名的容器
-  // App 组件渲染内容在 .gh-root 下
-  const targetContainer = document.querySelector(".gh-root") || document.body
+  // 挂载到 document.body，确保与 DialogOverlay 弹窗样式环境一致
+  // （.gh-root 在 Shadow DOM 内，document.querySelector 取不到，历史上恒为 body）
+  const targetContainer = document.body
 
   const capsuleStyle: React.CSSProperties = {
     bottom: position.bottom,
@@ -513,7 +537,10 @@ export const QueueOverlay: React.FC<QueueOverlayProps> = ({ adapter, dispatcher 
   if (!isExpanded) {
     return createPortal(
       <Tooltip content={shortcutText || t("queueQuickAsk")}>
-        <div className="gh-queue-capsule" style={capsuleStyle} onClick={() => setIsExpanded(true)}>
+        <div
+          className="gh-queue-capsule gh-interactive"
+          style={capsuleStyle}
+          onClick={() => setIsExpanded(true)}>
           <span className="gh-queue-capsule-icon">
             <PromptQueueIcon size={18} color="currentColor" />
           </span>
@@ -532,7 +559,7 @@ export const QueueOverlay: React.FC<QueueOverlayProps> = ({ adapter, dispatcher 
   return (
     <>
       {createPortal(
-        <div className="gh-queue-panel" style={panelStyle} ref={panelRef}>
+        <div className="gh-queue-panel gh-interactive" style={panelStyle} ref={panelRef}>
           {/* 头部 */}
           <div className="gh-queue-header">
             <div className="gh-queue-header-title">
@@ -577,9 +604,7 @@ export const QueueOverlay: React.FC<QueueOverlayProps> = ({ adapter, dispatcher 
           {/* 队列列表 */}
           <div className="gh-queue-list">
             {items.filter((i) => i.status === "pending" || i.status === "sending").length === 0 ? (
-              <div className="gh-queue-empty">
-                队列为空，输入内容后按 {submitKeyDisplay} 发送或排队
-              </div>
+              <div className="gh-queue-empty">{t("queueEmpty", { key: submitKeyDisplay })}</div>
             ) : (
               items
                 .filter((i) => i.status === "pending" || i.status === "sending")

@@ -10,6 +10,7 @@ import { extractConversationTitleFromDocumentTitle } from "~utils/conversation-t
 import { DOMToolkit } from "~utils/dom-toolkit"
 import { createExportAssetCollector, type ExportAssetCollector } from "~utils/export-assets"
 import type { ExportBundle, ExportFormat, ExportMessage } from "~utils/exporter"
+import { t } from "~utils/i18n"
 import { createSiteInstanceKey } from "~utils/site-identity"
 import type { ExportPackaging } from "~utils/storage"
 
@@ -1165,6 +1166,18 @@ export abstract class SiteAdapter {
   ): number {
     if (!startEl) return 0
     try {
+      // 边界元素必须真实位于起始元素之后，且在回退容器内；
+      // 否则 Range 会跨消息块统计（字数虚高）或直接抛异常
+      if (endEl) {
+        const followsStart = Boolean(
+          startEl.compareDocumentPosition(endEl) & Node.DOCUMENT_POSITION_FOLLOWING,
+        )
+        const withinContainer = fallbackContainer ? fallbackContainer.contains(endEl) : true
+        if (!followsStart || !withinContainer) {
+          endEl = null
+        }
+      }
+
       const range = document.createRange()
       range.setStartAfter(startEl)
       if (endEl) {
@@ -1247,7 +1260,14 @@ export abstract class SiteAdapter {
   }
 
   getOutlineSources(): OutlineSource[] {
-    return [{ id: "conversation", kind: "conversation", label: "对话", available: true }]
+    return [
+      {
+        id: "conversation",
+        kind: "conversation",
+        label: t("outlineSourceConversation"),
+        available: true,
+      },
+    ]
   }
 
   supportsDynamicOutlineSources(): boolean {
