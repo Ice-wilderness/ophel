@@ -51,6 +51,22 @@ export const de = {
   sitePacksRegistrySearchPlaceholder: "Pakete suchen",
   sitePacksRegistryNoMatch: "Keine passenden Pakete",
   sitePacksOpenSite: "Website öffnen",
+  sitePacksTabBuiltin: "Integrierte Seiten",
+  builtinSitesDesc:
+    "Verwalte, auf welchen integrierten KI-Seiten Ophel aktiv ist. Nach der Deaktivierung werden Panel und alle Erweiterungen auf dieser Seite nicht mehr geladen; lade geöffnete Seiten neu, damit die Änderung vollständig wirkt",
+  builtinSiteBadge: "Integriert",
+  builtinSiteEnabledToast: "{site} wieder aktiviert",
+  builtinSiteDisabledToast:
+    "Ophel auf {site} deaktiviert; lade geöffnete Seiten neu, damit es vollständig wirkt",
+  disableSiteCardTitle: "Seiten-Schalter",
+  disableSiteEntryLabel: "Ophel auf dieser Seite deaktivieren",
+  disableSiteEntryDesc:
+    "Entfernt sofort Panel und alle Erweiterungen auf {site}. Du kannst es jederzeit im Adapter-Center wieder aktivieren",
+  disableSiteAction: "Deaktivieren…",
+  disableSiteConfirmTitle: "Ophel auf {site} deaktivieren?",
+  disableSiteConfirmDesc:
+    "Entfernt Panel und alle Hintergrund-Monitore von dieser Seite und lädt sie neu, damit die Deaktivierung vollständig wirkt. Zum erneuten Aktivieren gehe zu Adapter-Center → Integrierte Seiten",
+  disableSiteConfirmAction: "Deaktivieren & neu laden",
   sitePacksTabInstalled: "Installiert",
   sitePacksTabOrigins: "Eigene Websites",
   sitePacksTabUpdates: "Durchsuchen & Updates",
@@ -1534,6 +1550,18 @@ Gib den Code und eine Zusammenfassung der Verbesserungen aus.`,
   popupSupported: "Aktiv",
   popupUnsupported: "Nicht unterstützt",
   popupNewChat: "Neuer Chat",
+  popupSiteDisabled: "Deaktiviert",
+  popupEnableOnThisSite: "Auf dieser Seite aktivieren",
+  popupToggleOphelOnSite: "Ophel auf dieser Seite ein- oder ausschalten",
+  popupSiteDisabledHint: "Ophel-Funktionen sind auf dieser Seite deaktiviert",
+  popupSiteDisabledToast: "Deaktiviert. Lade die Seite neu, damit es vollständig wirkt",
+  popupSiteEnabledToast: "Aktiviert",
+  popupPackEnabledToast:
+    "Site-Paket {site} aktiviert; lade geöffnete Seiten neu, um die Änderung anzuwenden",
+  popupPackDisabledToast:
+    "Site-Paket {site} deaktiviert; lade geöffnete Seiten neu, um die Änderung anzuwenden",
+  popupSiteTileDisabledTooltip:
+    "Ophel ist auf dieser Seite deaktiviert; Klicken öffnet die Seite trotzdem",
   popupQuickAccess: "Schnellzugriff",
   popupSitePackUnbound: "Keine Website hinzugefügt",
   popupSwitchSiteEntry: "Seiten-Einstieg wechseln",

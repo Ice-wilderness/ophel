@@ -50,6 +50,22 @@ export const es = {
   sitePacksRegistrySearchPlaceholder: "Buscar paquetes",
   sitePacksRegistryNoMatch: "No hay paquetes coincidentes",
   sitePacksOpenSite: "Abrir sitio",
+  sitePacksTabBuiltin: "Sitios integrados",
+  builtinSitesDesc:
+    "Gestiona en qué sitios de IA integrados se ejecuta Ophel. Al desactivarlo, el panel y todas las mejoras dejan de cargarse en ese sitio; recarga las páginas abiertas para que el cambio se aplique por completo",
+  builtinSiteBadge: "Integrado",
+  builtinSiteEnabledToast: "{site} reactivado",
+  builtinSiteDisabledToast:
+    "Ophel desactivado en {site}; recarga las páginas abiertas para que se aplique por completo",
+  disableSiteCardTitle: "Interruptor del sitio",
+  disableSiteEntryLabel: "Desactivar Ophel en este sitio",
+  disableSiteEntryDesc:
+    "Elimina inmediatamente el panel y todas las mejoras en {site}. Puedes reactivarlo en cualquier momento en el Centro de adaptadores",
+  disableSiteAction: "Desactivar…",
+  disableSiteConfirmTitle: "¿Desactivar Ophel en {site}?",
+  disableSiteConfirmDesc:
+    "Elimina el panel y todos los monitores en segundo plano de esta página y la recarga para aplicar el cambio por completo. Para reactivarlo, ve a Centro de adaptadores → Sitios integrados",
+  disableSiteConfirmAction: "Desactivar y recargar",
   sitePacksTabInstalled: "Instalados",
   sitePacksTabOrigins: "Sitios personalizados",
   sitePacksTabUpdates: "Catálogo y actualizaciones",
@@ -1534,6 +1550,18 @@ Dame el código y luego un resumen de mejoras.`,
   popupSupported: "Activo",
   popupUnsupported: "No soportado",
   popupNewChat: "Nueva Conversación",
+  popupSiteDisabled: "Desactivado",
+  popupEnableOnThisSite: "Activar en este sitio",
+  popupToggleOphelOnSite: "Activar o desactivar Ophel en este sitio",
+  popupSiteDisabledHint: "Las funciones de Ophel están desactivadas en este sitio",
+  popupSiteDisabledToast: "Desactivado. Recarga la página para aplicarlo por completo",
+  popupSiteEnabledToast: "Activado",
+  popupPackEnabledToast:
+    "Paquete de sitio {site} activado; recarga las páginas abiertas para aplicar",
+  popupPackDisabledToast:
+    "Paquete de sitio {site} desactivado; recarga las páginas abiertas para aplicar",
+  popupSiteTileDisabledTooltip:
+    "Ophel está desactivado en este sitio; haz clic para abrirlo de todos modos",
   popupQuickAccess: "Acceso Rápido",
   popupSitePackUnbound: "Sin sitio añadido",
   popupSwitchSiteEntry: "Cambiar entrada del sitio",

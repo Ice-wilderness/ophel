@@ -449,6 +449,55 @@ describe("AdapterRegistry origin activation", () => {
   })
 })
 
+describe("AdapterRegistry disabled built-in sites", () => {
+  it("matches built-ins first when no site is disabled", async () => {
+    const pack = createPack({ id: "takeover-pack", matches: ["https://toggle.example/*"] })
+    registryTestState.snapshot.packs.push(pack)
+    registryTestState.builtinMatches.add("doubao")
+    setCurrentUrl("https://toggle.example/chat")
+    const registry = await importRegistry()
+
+    await registry.initAdapterRegistry()
+
+    expect(registry.getAdapter()?.getSiteId()).toBe("doubao")
+    expect(registry.getEffectiveAdapter([])?.getSiteId()).toBe("doubao")
+  })
+
+  it("lets an installed SitePack take over when the built-in adapter is disabled", async () => {
+    const pack = createPack({ id: "takeover-pack", matches: ["https://toggle.example/*"] })
+    registryTestState.snapshot.packs.push(pack)
+    registryTestState.builtinMatches.add("doubao")
+    setCurrentUrl("https://toggle.example/chat")
+    const registry = await importRegistry()
+
+    await registry.initAdapterRegistry()
+
+    expect(registry.getAdapter()?.getSiteId()).toBe("doubao")
+    expect(registry.getEffectiveAdapter(["doubao"])?.getSiteId()).toBe("pack:takeover-pack")
+  })
+
+  it("returns null when the built-in adapter is disabled and no SitePack matches", async () => {
+    registryTestState.builtinMatches.add("doubao")
+    setCurrentUrl("https://toggle.example/chat")
+    const registry = await importRegistry()
+
+    await registry.initAdapterRegistry()
+
+    expect(registry.getAdapter()?.getSiteId()).toBe("doubao")
+    expect(registry.getEffectiveAdapter(["doubao"])).toBeNull()
+  })
+
+  it("ignores disabled entries that do not match the current site", async () => {
+    registryTestState.builtinMatches.add("doubao")
+    setCurrentUrl("https://toggle.example/chat")
+    const registry = await importRegistry()
+
+    await registry.initAdapterRegistry()
+
+    expect(registry.getEffectiveAdapter(["chatgpt", "kimi"])?.getSiteId()).toBe("doubao")
+  })
+})
+
 describe("AdapterRegistry bootstrap contracts", () => {
   it("keeps the panel and both platform entries behind registry initialization", async () => {
     const [uiEntry, extensionEntry, userscriptEntry, appSource] = await Promise.all([
@@ -459,10 +508,28 @@ describe("AdapterRegistry bootstrap contracts", () => {
     ])
 
     expect(uiEntry).toMatch(
-      /void registryReady\(\)[\s\S]*setIsRegistryReady\(true\)[\s\S]*if \(!isRegistryReady \|\| !adapter\) return null[\s\S]*return <App key={adapter\.getSiteInstanceKey\(\)} adapter={adapter} \/>/,
+      /getEffectiveAdapter\(disabledSites\)[\s\S]*void registryReady\(\)[\s\S]*setIsRegistryReady\(true\)[\s\S]*if \(!isRegistryReady \|\| !settingsHydrated \|\| !effectiveAdapter\) return null[\s\S]*return <App key={effectiveAdapter\.getSiteInstanceKey\(\)} adapter={effectiveAdapter} \/>/,
     )
     expect(extensionEntry).toContain("await initAdapterRegistry()")
     expect(userscriptEntry).toContain("await initAdapterRegistry()")
     expect(appSource).toContain("const fallbackAdapter = useMemo(() => getAdapter(), [])")
+  })
+
+  it("resolves the effective adapter instead of comparing the raw built-in match", async () => {
+    const [extensionEntry, userscriptEntry, appSource, quickButtonsSource] = await Promise.all([
+      readFile(path.join(REPOSITORY_ROOT, "src", "contents", "main.ts"), "utf8"),
+      readFile(path.join(REPOSITORY_ROOT, "src", "platform", "userscript", "entry.tsx"), "utf8"),
+      readFile(path.join(REPOSITORY_ROOT, "src", "components", "App.tsx"), "utf8"),
+      readFile(path.join(REPOSITORY_ROOT, "src", "components", "QuickButtons.tsx"), "utf8"),
+    ])
+
+    // 运行时判等若直接比对 getAdapter() 的原始内置匹配，"内置停用 + SitePack 接管"
+    // 场景会被误判为已初始化而提前返回，造成旧模块未销毁、新模块未初始化的死锁
+    expect(extensionEntry).not.toContain("activeAdapterInstance === matchedAdapter")
+    expect(extensionEntry).toContain("getEffectiveAdapter(getSettingsState().disabledSites)")
+    expect(userscriptEntry).toContain("getEffectiveAdapter(settings.disabledSites)")
+    // 面板与快捷按钮必须使用 props 传入的生效适配器，不能回退到全局 getAdapter()
+    expect(appSource).not.toContain("const currentAdapter = getAdapter()")
+    expect(quickButtonsSource).not.toContain("getAdapter()")
   })
 })

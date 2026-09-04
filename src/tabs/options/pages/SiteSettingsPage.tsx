@@ -12,7 +12,7 @@ import {
   type SitePackCapability,
 } from "~adapters/feature-capabilities"
 import { PageContentIcon as LayoutIcon } from "~components/icons"
-import { NumberInput, Slider } from "~components/ui"
+import { Button, ConfirmDialog, NumberInput, Slider } from "~components/ui"
 import { LAYOUT_CONFIG, SITE_IDS, SITE_SETTINGS_TAB_IDS, isBuiltinSiteId } from "~constants"
 import { platform } from "~platform"
 import { useSettingsStore } from "~stores/settings-store"
@@ -100,6 +100,7 @@ const SiteSettingsPage: React.FC<SiteSettingsPageProps> = ({
   const [activeTab, setActiveTab] = useState<string>(
     normalizeSiteSettingsTab(initialTab, availableTabs),
   )
+  const [showDisableSiteConfirm, setShowDisableSiteConfirm] = useState(false)
   const currentLanguage = useSyncExternalStore(subscribeI18nChanges, getCurrentLang, getCurrentLang)
 
   useEffect(() => {
@@ -121,6 +122,17 @@ const SiteSettingsPage: React.FC<SiteSettingsPageProps> = ({
     (supportsPageWidth && (adapter?.getUserQueryWidthSelectors().length ?? 0) > 0)
   const supportsZenMode = supportsFeature("zen")
   const supportsCleanMode = supportsFeature("clean")
+  // 仅在面板内（有适配器上下文）且为内置站点时提供"在此站点停用"入口
+  const canDisableCurrentSite = Boolean(adapter) && isBuiltinSiteId(siteId)
+  const handleDisableCurrentSite = () => {
+    const current = settings?.disabledSites ?? []
+    if (!current.includes(siteId)) {
+      setSettings({ disabledSites: [...current, siteId] })
+    }
+    // persist 写入 chrome.storage 是异步 IPC，立即刷新可能中断写入；
+    // 留出持久化缓冲后再刷新（主世界注入脚本无法随设置卸载，需刷新彻底停用）
+    setTimeout(() => window.location.reload(), 300)
+  }
   // 宽度布局相关状态
   const currentPageWidth = settings ? getSitePageWidth(settings, siteInstanceKey) : undefined
   const currentUserQueryWidth = settings
@@ -228,6 +240,22 @@ const SiteSettingsPage: React.FC<SiteSettingsPageProps> = ({
         </div>
       )}
       <p className="settings-page-desc">{t("siteSettingsPageDesc")}</p>
+
+      {canDisableCurrentSite && (
+        <SettingCard title={t("disableSiteCardTitle")}>
+          <SettingRow
+            label={t("disableSiteEntryLabel")}
+            description={t("disableSiteEntryDesc", { site: adapter?.getName() ?? siteId })}>
+            <Button
+              type="button"
+              size="sm"
+              variant="danger"
+              onClick={() => setShowDisableSiteConfirm(true)}>
+              {t("disableSiteAction")}
+            </Button>
+          </SettingRow>
+        </SettingCard>
+      )}
 
       <TabGroup tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
@@ -733,6 +761,17 @@ const SiteSettingsPage: React.FC<SiteSettingsPageProps> = ({
             }
           />
         </SettingCard>
+      )}
+
+      {showDisableSiteConfirm && (
+        <ConfirmDialog
+          title={t("disableSiteConfirmTitle")}
+          message={t("disableSiteConfirmDesc", { site: adapter?.getName() ?? siteId })}
+          confirmText={t("disableSiteConfirmAction")}
+          danger
+          onConfirm={handleDisableCurrentSite}
+          onCancel={() => setShowDisableSiteConfirm(false)}
+        />
       )}
     </div>
   )

@@ -51,6 +51,22 @@ export const ja = {
   sitePacksRegistrySearchPlaceholder: "パックを検索",
   sitePacksRegistryNoMatch: "一致するパックがありません",
   sitePacksOpenSite: "サイトを開く",
+  sitePacksTabBuiltin: "内蔵サイト",
+  builtinSitesDesc:
+    "内蔵 AI サイトでの Ophel の有効状態を管理します。無効にすると、そのサイトではパネルとすべての拡張機能が読み込まれなくなります。開いているページは再読み込み後に完全に反映されます",
+  builtinSiteBadge: "内蔵",
+  builtinSiteEnabledToast: "{site} を再度有効にしました",
+  builtinSiteDisabledToast:
+    "{site} で Ophel を無効にしました。開いているページは再読み込み後に完全に反映されます",
+  disableSiteCardTitle: "サイトの切り替え",
+  disableSiteEntryLabel: "このサイトで Ophel を無効にする",
+  disableSiteEntryDesc:
+    "無効にすると {site} のパネルとすべての拡張機能が直ちに削除されます。アダプターセンターでいつでも再度有効にできます",
+  disableSiteAction: "無効にする…",
+  disableSiteConfirmTitle: "{site} で Ophel を無効にしますか？",
+  disableSiteConfirmDesc:
+    "このページのパネルとすべてのバックグラウンド監視を削除し、ページを再読み込みして完全に反映します。元に戻すには「アダプターセンター → 内蔵サイト」で再度有効にしてください",
+  disableSiteConfirmAction: "無効にして再読み込み",
   sitePacksTabInstalled: "インストール済み",
   sitePacksTabOrigins: "カスタムサイト",
   sitePacksTabUpdates: "追加と更新",
@@ -1575,6 +1591,17 @@ export const ja = {
   popupSupported: "有効",
   popupUnsupported: "非対応",
   popupNewChat: "新規チャット",
+  popupSiteDisabled: "無効",
+  popupEnableOnThisSite: "このサイトで有効化",
+  popupToggleOphelOnSite: "このサイトで Ophel を切り替え",
+  popupSiteDisabledHint: "このサイトで Ophel の拡張機能は無効になっています",
+  popupSiteDisabledToast: "無効にしました。完全に反映するにはページを再読み込みしてください",
+  popupSiteEnabledToast: "有効にしました",
+  popupPackEnabledToast:
+    "サイトパック {site} を有効にしました。開いているページを再読み込みすると反映されます",
+  popupPackDisabledToast:
+    "サイトパック {site} を無効にしました。開いているページを再読み込みすると反映されます",
+  popupSiteTileDisabledTooltip: "このサイトで Ophel は無効です。クリックするとサイトを開きます",
   popupQuickAccess: "クイックアクセス",
   popupSitePackUnbound: "サイト未追加",
   popupSwitchSiteEntry: "サイトの入口を切り替え",

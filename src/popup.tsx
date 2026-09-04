@@ -6,6 +6,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 
+import { siteMatchPatternMatchesUrl } from "~adapters/declarative/match-pattern"
 import { PlatformIcon } from "~components/PlatformIcon"
 import { ChevronDownIcon } from "~components/icons/ChevronDownIcon"
 import { DiscordIcon } from "~components/icons/DiscordIcon"
@@ -14,6 +15,7 @@ import { SettingsIcon } from "~components/icons/SettingsIcon"
 import { StarIcon } from "~components/icons/StarIcon"
 import { TimeIcon } from "~components/icons/TimeIcon"
 import { Tooltip } from "~components/ui/Tooltip"
+import type { SupportedAiPlatform } from "~constants/defaults"
 import {
   buildQuickAccessSites,
   hostOf,
@@ -21,7 +23,17 @@ import {
   resolveSiteEntryUrl,
   type QuickAccessSite,
 } from "~core/quick-access-sites"
+import { createRuntimePackManager } from "~core/pack-manager-runtime"
+import {
+  isQuickAccessTileDisabled,
+  resolvePopupSiteToggleTarget,
+  resolveSiteEffectiveState,
+  type SiteEffectiveStatus,
+} from "~core/site-effective-state"
+import { getDynamicPlatforms } from "~core/site-pack-platforms"
 import { useSupportedAiPlatforms } from "~hooks/useSupportedAiPlatforms"
+import { platform } from "~platform"
+import { useSettingsStore } from "~stores/settings-store"
 import { GITHUB_REPO_URL, getDonateChannels } from "~utils/donate-channels"
 import { getStoreInfo } from "~utils/getStoreInfo"
 import { getCurrentLang, setLanguage, t } from "~utils/i18n"
@@ -43,11 +55,13 @@ interface Prompt {
 interface SiteInfo {
   name: string
   url: string
-  supported: boolean
+  status: SiteEffectiveStatus
 }
 
 /** 记住每个平台上次打开的入口地址（多域名平台专用）。 */
 const QUICK_ACCESS_LAST_URLS_KEY = "popupQuickAccessLastEntryUrls"
+/** 设置未 hydration 时的稳定空引用，避免每次渲染生成新数组击穿 useMemo */
+const NO_DISABLED_SITES: readonly string[] = []
 
 function IndexPopup() {
   const supportedPlatforms = useSupportedAiPlatforms()
@@ -55,7 +69,80 @@ function IndexPopup() {
     () => buildQuickAccessSites(supportedPlatforms),
     [supportedPlatforms],
   )
-  const [currentSite, setCurrentSite] = useState<SiteInfo | null>(null)
+  const [activeTabUrl, setActiveTabUrl] = useState("")
+  const settings = useSettingsStore((state) => state.settings)
+  const settingsHydrated = useSettingsStore((state) => state._hasHydrated)
+  const setSettings = useSettingsStore((state) => state.setSettings)
+  const disabledSites = settings?.disabledSites ?? NO_DISABLED_SITES
+
+  // 站点有效状态：内置停用后由 SitePack 接管时仍视为激活
+  const effectiveState = useMemo(
+    () => resolveSiteEffectiveState(supportedPlatforms, activeTabUrl, disabledSites),
+    [supportedPlatforms, activeTabUrl, disabledSites],
+  )
+
+  // 平台目录只含启用中的适配包；为支持从弹窗重新启用，额外查找
+  // 匹配当前 URL 但已停用的已安装适配包（含用户绑定域名）
+  const packManager = useMemo(() => createRuntimePackManager(platform.storage), [])
+  const [disabledPackPlatform, setDisabledPackPlatform] = useState<SupportedAiPlatform | null>(null)
+  const [packStateVersion, setPackStateVersion] = useState(0)
+  const [isPackToggleBusy, setIsPackToggleBusy] = useState(false)
+
+  useEffect(() => {
+    let parsed: URL
+    try {
+      parsed = new URL(activeTabUrl)
+    } catch {
+      return
+    }
+    let cancelled = false
+    void Promise.all([packManager.getSnapshot(), packManager.getOriginBindings()]).then(
+      ([snapshot, bindings]) => {
+        if (cancelled) return
+        const disabledPacks = snapshot.packs.filter((pack) => !pack.enabled)
+        const matched = getDynamicPlatforms(disabledPacks, bindings, getCurrentLang()).find(
+          (candidate) =>
+            candidate.matchPatterns.some((pattern) => siteMatchPatternMatchesUrl(parsed, pattern)),
+        )
+        setDisabledPackPlatform(matched ?? null)
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [activeTabUrl, packManager, packStateVersion])
+
+  // 开关作用对象：生效适配器是适配包 → 控制包启停；无生效适配器但匹配到
+  // 已停用适配包 → 控制该包以便重新启用；其余情况回落到内置站点开关
+  const toggleTarget = useMemo(
+    () => resolvePopupSiteToggleTarget(effectiveState, disabledPackPlatform),
+    [effectiveState, disabledPackPlatform],
+  )
+
+  const currentSite = useMemo((): SiteInfo | null => {
+    if (!activeTabUrl) return null
+    // 开关目标是已停用适配包时，站点名展示该包（开关旁的名字始终与作用对象一致）
+    const displayPlatform =
+      toggleTarget?.kind === "pack" ? toggleTarget.platform : effectiveState.platform
+    if (displayPlatform) {
+      const status =
+        toggleTarget?.kind === "pack" && !toggleTarget.enabled ? "disabled" : effectiveState.status
+      return {
+        name: displayPlatform.name,
+        url: resolveSiteEntryUrl(displayPlatform, activeTabUrl),
+        status,
+      }
+    }
+    try {
+      const hostname = new URL(activeTabUrl).hostname || t("popupCurrentSite")
+      return { name: hostname, url: "", status: "unsupported" }
+    } catch {
+      return { name: t("popupCurrentSite"), url: "", status: "unsupported" }
+    }
+  }, [activeTabUrl, effectiveState, toggleTarget])
+
+  const isCurrentSiteDisabled = currentSite?.status === "disabled"
+  const canToggleCurrentSite = toggleTarget !== null
   const [recentPrompts, setRecentPrompts] = useState<Prompt[]>([])
   const [lastEntryUrls, setLastEntryUrls] = useState<Record<string, string>>({})
   const [entryMenuSiteKey, setEntryMenuSiteKey] = useState<string | null>(null)
@@ -139,31 +226,67 @@ function IndexPopup() {
 
   useEffect(() => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const url = tabs[0]?.url || ""
-      const matchedSite = supportedPlatforms.find((site) => site.pattern.test(url))
-
-      if (matchedSite) {
-        setCurrentSite({
-          name: matchedSite.name,
-          url: resolveSiteEntryUrl(matchedSite, url),
-          supported: true,
-        })
-        return
-      }
-
-      try {
-        const hostname = new URL(url).hostname || t("popupCurrentSite")
-        setCurrentSite({ name: hostname, url: "", supported: false })
-      } catch {
-        setCurrentSite({ name: t("popupCurrentSite"), url: "", supported: false })
-      }
+      setActiveTabUrl(tabs[0]?.url || "")
     })
-  }, [supportedPlatforms])
+  }, [])
 
   const showToast = (message: string) => {
     setToastMessage(message)
     setToastVisible(true)
     setTimeout(() => setToastVisible(false), 1500)
+  }
+
+  // 停用后核心模块由内容脚本的设置订阅即时回收；
+  // 主世界注入脚本无法热卸载，toast 明确提示刷新后完全生效
+  const toggleCurrentSite = () => {
+    const siteId = toggleTarget?.kind === "builtin" ? effectiveState.builtinPlatform?.id : undefined
+    if (!siteId || !settings) return
+    const next = isCurrentSiteDisabled
+      ? disabledSites.filter((id) => id !== siteId)
+      : [...disabledSites, siteId]
+    setSettings({ disabledSites: next })
+    showToast(isCurrentSiteDisabled ? t("popupSiteEnabledToast") : t("popupSiteDisabledToast"))
+  }
+
+  // 适配包开关：控制已安装包的启用状态（与适配中心一致，不解绑域名）。
+  // 内容脚本按页注册，已打开的页面需刷新后生效，toast 明确提示
+  const togglePackSite = async () => {
+    if (toggleTarget?.kind !== "pack" || isPackToggleBusy) return
+    const packId = toggleTarget.platform.id.slice("pack:".length)
+    const packName = toggleTarget.platform.name
+    setIsPackToggleBusy(true)
+    try {
+      if (toggleTarget.enabled) {
+        await packManager.setEnabled(packId, false)
+      } else {
+        const permission = await platform.sitePacks.ensureOrigins(packId)
+        if (permission === "denied") {
+          showToast(t("sitePacksPermissionDenied", { name: packName }))
+          return
+        }
+        await packManager.setEnabled(packId, true)
+      }
+      await platform.sitePacks.reconcile()
+      showToast(
+        toggleTarget.enabled
+          ? t("popupPackDisabledToast", { site: packName })
+          : t("popupPackEnabledToast", { site: packName }),
+      )
+    } catch (error) {
+      console.warn("[Ophel Popup] Failed to toggle site pack:", error)
+      showToast(t("sitePacksOperationFailed", { error: String(error) }))
+    } finally {
+      setIsPackToggleBusy(false)
+      setPackStateVersion((version) => version + 1)
+    }
+  }
+
+  const handleToggleCurrentSite = () => {
+    if (toggleTarget?.kind === "pack") {
+      void togglePackSite()
+      return
+    }
+    toggleCurrentSite()
   }
 
   const getActiveTab = async () => {
@@ -238,7 +361,7 @@ function IndexPopup() {
   }
 
   const startNewChatInCurrentSite = async () => {
-    if (!currentSite?.supported) {
+    if (!currentSite || currentSite.status === "unsupported" || currentSite.status === "disabled") {
       return
     }
 
@@ -265,8 +388,8 @@ function IndexPopup() {
   const storeInfo = getStoreInfo()
   const donateChannels = getDonateChannels(getCurrentLang())
 
-  // Wait for language to be loaded before rendering
-  if (!languageReady) {
+  // 等待语言与设置 hydration，避免停用状态在首帧渲染出错
+  if (!languageReady || !settingsHydrated) {
     return (
       <div className="popup-container" style={{ padding: 20, textAlign: "center" }}>
         ...
@@ -303,28 +426,57 @@ function IndexPopup() {
             <div className="popup-site-name">{currentSite?.name || "..."}</div>
           </div>
           {currentSite && (
-            <div
-              className={`popup-status-badge ${currentSite.supported ? "supported" : "unsupported"}`}>
-              {currentSite.supported ? t("popupSupported") : t("popupUnsupported")}
+            <div className="popup-site-status-right">
+              <div className={`popup-status-badge ${currentSite.status}`}>
+                {currentSite.status === "disabled"
+                  ? t("popupSiteDisabled")
+                  : currentSite.status === "unsupported"
+                    ? t("popupUnsupported")
+                    : t("popupSupported")}
+              </div>
+              {canToggleCurrentSite && (
+                <Tooltip content={t("popupToggleOphelOnSite")}>
+                  <button
+                    className={`popup-site-switch${isCurrentSiteDisabled ? " off" : ""}`}
+                    role="switch"
+                    aria-checked={!isCurrentSiteDisabled}
+                    aria-label={t("popupToggleOphelOnSite")}
+                    onClick={handleToggleCurrentSite}>
+                    <span className="popup-site-switch-knob" />
+                  </button>
+                </Tooltip>
+              )}
             </div>
           )}
         </div>
 
         {/* Quick Actions or Site Links */}
-        {currentSite?.supported ? (
-          <div className="popup-actions popup-actions-single">
-            <button className="popup-action-btn primary-btn" onClick={startNewChatInCurrentSite}>
-              🚀 {t("popupNewChat")}
-            </button>
-          </div>
+        {currentSite && currentSite.status !== "unsupported" ? (
+          isCurrentSiteDisabled ? (
+            <div className="popup-disabled-state">
+              <div className="popup-disabled-hint">{t("popupSiteDisabledHint")}</div>
+              <button className="popup-action-btn primary-btn" onClick={handleToggleCurrentSite}>
+                {t("popupEnableOnThisSite")}
+              </button>
+            </div>
+          ) : (
+            <div className="popup-actions popup-actions-single">
+              <button className="popup-action-btn primary-btn" onClick={startNewChatInCurrentSite}>
+                🚀 {t("popupNewChat")}
+              </button>
+            </div>
+          )
         ) : (
           <>
             <div className="popup-section-title">{t("popupQuickAccess")}</div>
             <div className="popup-sites-grid">
               {quickAccessSites.map((site) => {
                 const resolvedUrl = resolveQuickAccessUrl(site, lastEntryUrls)
-                const subtitle =
-                  site.urls.length === 0
+                // 停用的内置站点：保留导航能力，弱化展示并标注状态
+                const tileDisabled = isQuickAccessTileDisabled(site.platform, disabledSites)
+                const subtitle = tileDisabled
+                  ? t("popupSiteDisabled")
+                  : site.urls.length === 0
                     ? t("popupSitePackUnbound")
                     : site.urls.length > 1 && resolvedUrl
                       ? hostOf(resolvedUrl)
@@ -332,11 +484,15 @@ function IndexPopup() {
                 return (
                   <div className="popup-site-tile" key={site.key}>
                     <Tooltip
-                      content={quickAccessTooltip(site)}
+                      content={
+                        tileDisabled
+                          ? `${site.platform.name} · ${t("popupSiteTileDisabledTooltip")}`
+                          : quickAccessTooltip(site)
+                      }
                       triggerStyle={{ width: "100%", display: "flex" }}
                       triggerClassName="popup-tooltip-trigger">
                       <button
-                        className={`popup-site-link${site.urls.length === 0 ? " unbound" : ""}`}
+                        className={`popup-site-link${site.urls.length === 0 ? " unbound" : ""}${tileDisabled ? " site-disabled" : ""}`}
                         onClick={() => openQuickAccessSite(site)}>
                         <PlatformIcon
                           platform={site.platform}

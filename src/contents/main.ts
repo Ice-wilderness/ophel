@@ -9,6 +9,7 @@ import type { PlasmoCSConfig } from "plasmo"
 
 import {
   getAdapter,
+  getEffectiveAdapter,
   getBrokenOriginBinding,
   initAdapterRegistry,
   reapplyBuiltinSiteConfig,
@@ -35,7 +36,12 @@ import { useFoldersStore } from "~stores/folders-store"
 import { usePromptChainsStore } from "~stores/prompt-chains-store"
 import { usePromptsStore } from "~stores/prompts-store"
 import { useReadingHistoryStore } from "~stores/reading-history-store"
-import { claimLegacySiteSettings, getSettingsState, useSettingsStore } from "~stores/settings-store"
+import {
+  claimLegacySiteSettings,
+  getSettingsState,
+  subscribeSettings,
+  useSettingsStore,
+} from "~stores/settings-store"
 import { useTagsStore } from "~stores/tags-store"
 import {
   EVENT_EXTENSION_UPDATE_AVAILABLE,
@@ -468,6 +474,7 @@ export const config: PlasmoCSConfig = {
 }
 
 let activeAdapterInstance: SiteAdapter | null = null
+let pendingAdapterInstance: SiteAdapter | null = null
 let activeModulesCleanup: (() => void) | null = null
 let initGeneration = 0
 let bindingIssueNoticeShown = false
@@ -521,7 +528,9 @@ function registerBackgroundMessageListener() {
       return true
     }
 
-    const adapter = getAdapter()
+    // 必须使用实际运行的适配器实例：getAdapter() 会绕过站点停用状态，
+    // 也无法把消息派发给接管该站点的社区 SitePack
+    const adapter = activeAdapterInstance
 
     if (message.type === "CHECK_IS_GENERATING") {
       const isGenerating = adapter?.isGenerating?.() ?? false
@@ -569,75 +578,102 @@ function registerBackgroundMessageListener() {
   })
 }
 
+const waitForSettingsHydration = (): Promise<void> =>
+  new Promise<void>((resolve) => {
+    if (useSettingsStore.getState()._hasHydrated) {
+      resolve()
+      return
+    }
+    const unsub = useSettingsStore.subscribe((state) => {
+      if (state._hasHydrated) {
+        unsub()
+        resolve()
+      }
+    })
+  })
+
 function initializeOphel() {
-  const adapter = getAdapter()
+  const matchedAdapter = getAdapter()
 
-  if (adapter) {
-    if (activeAdapterInstance === adapter) return
-    // 适配器切换（含 A→B 直接切换）时先销毁旧模块，避免订阅与观察者残留
-    teardownActiveModules()
-    activeAdapterInstance = adapter
-    const generation = initGeneration
+  if (matchedAdapter) {
+    // 只按 pending 防抖：这里不能用原始匹配结果与 activeAdapterInstance 判等，
+    // 否则内置适配器运行中被停用并由 SitePack 接管时会被误判为"已初始化"而提前返回，
+    // 造成旧模块未销毁、新模块未初始化的死锁
+    if (pendingAdapterInstance === matchedAdapter) return
 
-    console.warn(`[Ophel] Loaded ${adapter.getName()} adapter on:`, window.location.hostname)
-
-    // 初始化适配器
-    adapter.afterPropertiesSet({})
-
-    // 异步初始化所有功能模块
+    pendingAdapterInstance = matchedAdapter
     ;(async () => {
-      // 等待 Zustand hydration 完成
-      await new Promise<void>((resolve) => {
-        if (useSettingsStore.getState()._hasHydrated) {
-          resolve()
+      try {
+        // 等待 Zustand hydration 完成后再判断站点停用状态
+        await waitForSettingsHydration()
+
+        // 等待期间适配器可能已被更新的调用取代（SPA 导航）
+        if (pendingAdapterInstance !== matchedAdapter) return
+
+        // 内置适配器被停用时跳过，允许已安装的 SitePack 接管同站点；
+        // 无接管适配器则完全停用
+        const adapter = getEffectiveAdapter(getSettingsState().disabledSites)
+        if (!adapter) {
+          teardownActiveModules()
           return
         }
-        const unsub = useSettingsStore.subscribe((state) => {
-          if (state._hasHydrated) {
-            unsub()
-            resolve()
-          }
-        })
-      })
+        // 有效适配器未变化（例如同站点 SPA 导航）时不重复初始化
+        if (activeAdapterInstance === adapter) return
 
-      const siteId = adapter.getSiteId()
-      const siteInstanceKey = adapter.getSiteInstanceKey()
-      if (adapter.canClaimLegacySiteData()) {
-        claimLegacySiteSettings(siteId, siteInstanceKey)
+        // 适配器切换（含 A→B 直接切换）时先销毁旧模块，避免订阅与观察者残留
+        teardownActiveModules()
+        activeAdapterInstance = adapter
+        const generation = initGeneration
+
+        console.warn(`[Ophel] Loaded ${adapter.getName()} adapter on:`, window.location.hostname)
+
+        // 初始化适配器
+        adapter.afterPropertiesSet({})
+
+        const siteId = adapter.getSiteId()
+        const siteInstanceKey = adapter.getSiteInstanceKey()
+        if (adapter.canClaimLegacySiteData()) {
+          claimLegacySiteSettings(siteId, siteInstanceKey)
+        }
+        const settings = getSettingsState()
+
+        // 创建模块上下文
+        const ctx: ModulesContext = {
+          adapter,
+          settings,
+          siteId,
+          siteInstanceKey,
+          isStale: () => generation !== initGeneration || activeAdapterInstance !== adapter,
+        }
+
+        // 初始化所有核心模块
+        await initCoreModules(ctx)
+
+        // 订阅设置变化
+        const unsubscribeModuleUpdates = subscribeModuleUpdates(ctx)
+
+        // 初始化 URL 变化监听
+        const cleanupUrlChangeObserver = initUrlChangeObserver(ctx)
+
+        const cleanup = () => {
+          unsubscribeModuleUpdates()
+          cleanupUrlChangeObserver()
+        }
+
+        // 异步窗口内适配器可能已切换或被清空；过期初始化结果立即销毁，避免泄漏
+        if (generation !== initGeneration || activeAdapterInstance !== adapter) {
+          cleanup()
+          return
+        }
+        activeModulesCleanup = cleanup
+      } finally {
+        if (pendingAdapterInstance === matchedAdapter) {
+          pendingAdapterInstance = null
+        }
       }
-      const settings = getSettingsState()
-
-      // 创建模块上下文
-      const ctx: ModulesContext = {
-        adapter,
-        settings,
-        siteId,
-        siteInstanceKey,
-        isStale: () => generation !== initGeneration || activeAdapterInstance !== adapter,
-      }
-
-      // 初始化所有核心模块
-      await initCoreModules(ctx)
-
-      // 订阅设置变化
-      const unsubscribeModuleUpdates = subscribeModuleUpdates(ctx)
-
-      // 初始化 URL 变化监听
-      const cleanupUrlChangeObserver = initUrlChangeObserver(ctx)
-
-      const cleanup = () => {
-        unsubscribeModuleUpdates()
-        cleanupUrlChangeObserver()
-      }
-
-      // 异步窗口内适配器可能已切换或被清空；过期初始化结果立即销毁，避免泄漏
-      if (generation !== initGeneration || activeAdapterInstance !== adapter) {
-        cleanup()
-        return
-      }
-      activeModulesCleanup = cleanup
     })()
   } else {
+    pendingAdapterInstance = null
     teardownActiveModules()
 
     // 绑定异常提示每次页面加载只展示一次，避免 SPA 导航反复弹出
@@ -663,6 +699,20 @@ async function bootstrapOphel() {
   await initAdapterRegistry()
   registerBackgroundMessageListener()
   initializeOphel()
+
+  // 内置站点停用状态即时生效：停用 → 回收全部核心模块；重新启用 → 重新初始化
+  subscribeSettings((newSettings) => {
+    if (!getAdapter()) return
+    const effectiveAdapter = getEffectiveAdapter(newSettings.disabledSites)
+    if (!effectiveAdapter) {
+      // 无有效适配器（内置已停用且无 SitePack 接管）：回收全部核心模块
+      if (activeAdapterInstance) teardownActiveModules()
+      return
+    }
+    if (effectiveAdapter !== activeAdapterInstance && !pendingAdapterInstance) {
+      initializeOphel()
+    }
+  })
 
   // 启动页面级 URL 广播，监听 SPA 路由变化
   const stopBroadcaster = startPageUrlChangeBroadcaster()

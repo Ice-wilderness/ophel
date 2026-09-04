@@ -403,7 +403,7 @@ async function init() {
     })
 
   const [
-    { getAdapter, getBrokenOriginBinding, initAdapterRegistry },
+    { getAdapter, getEffectiveAdapter, getBrokenOriginBinding, initAdapterRegistry },
     { App },
     { initNetworkMonitor },
     { initGeminiTitleGuard },
@@ -423,13 +423,6 @@ async function init() {
   publishAdaptersVendorBridge()
   await initAdapterRegistry()
   initGeminiTitleGuard()
-
-  const adapter = getAdapter()
-
-  if (adapter) {
-    // 初始化适配器
-    adapter.afterPropertiesSet({})
-  }
 
   let mountObserver: MutationObserver | null = null
   let mountInterval: number | null = null
@@ -516,6 +509,16 @@ async function init() {
           getAdapter(),
         )
         const [, forceUpdate] = React.useState(0)
+        // settings-store 为动态 import，加载完成前退化为 getAdapter()
+        const settingsStoreRef = React.useRef<
+          typeof import("~stores/settings-store").useSettingsStore | null
+        >(null)
+        // 解析当前生效适配器：内置站点被停用后回退到接管它的社区 SitePack
+        const resolveCurrentAdapter = React.useCallback((): SiteAdapter | null => {
+          const store = settingsStoreRef.current
+          if (!store) return getAdapter()
+          return getEffectiveAdapter(store.getState().settings.disabledSites)
+        }, [])
 
         React.useEffect(
           () =>
@@ -525,11 +528,32 @@ async function init() {
           [],
         )
 
+        // 订阅设置中的站点停用状态：停用后立即卸载面板；
+        // 内置适配器被停用时允许已安装的 SitePack 接管同站点
+        React.useEffect(() => {
+          let disposed = false
+          let unsubscribe: (() => void) | null = null
+          void import("~stores/settings-store").then(({ useSettingsStore }) => {
+            if (disposed) return
+            settingsStoreRef.current = useSettingsStore
+            const syncAdapter = () => {
+              const next = resolveCurrentAdapter()
+              setCurrentAdapter((prev) => (prev === next ? prev : next))
+            }
+            syncAdapter()
+            unsubscribe = useSettingsStore.subscribe(syncAdapter)
+          })
+          return () => {
+            disposed = true
+            unsubscribe?.()
+          }
+        }, [resolveCurrentAdapter])
+
         React.useEffect(() => {
           const stopBroadcaster = startPageUrlChangeBroadcaster()
 
           const handleUrlChange = () => {
-            const nextAdapter = getAdapter()
+            const nextAdapter = resolveCurrentAdapter()
             setCurrentAdapter((prev) => (prev === nextAdapter ? prev : nextAdapter))
           }
 
@@ -542,7 +566,7 @@ async function init() {
             window.removeEventListener("hashchange", handleUrlChange)
             stopBroadcaster()
           }
-        }, [])
+        }, [resolveCurrentAdapter])
 
         if (!currentAdapter) return null
         return React.createElement(App, {
@@ -564,9 +588,8 @@ async function init() {
   window.addEventListener("unload", cleanupUserscriptObjectUrls)
 
   // 等待 Zustand hydration 完成后初始化核心模块
-  const { useSettingsStore, getSettingsState, claimLegacySiteSettings } = await import(
-    "~stores/settings-store"
-  )
+  const { useSettingsStore, getSettingsState, claimLegacySiteSettings, subscribeSettings } =
+    await import("~stores/settings-store")
   const { useConversationsStore } = await import("~stores/conversations-store")
   const { useFoldersStore } = await import("~stores/folders-store")
   const { useTagsStore } = await import("~stores/tags-store")
@@ -614,6 +637,7 @@ async function init() {
   }
 
   let activeAdapter: SiteAdapter | null = null
+  let pendingAdapter: SiteAdapter | null = null
   let activeModulesCleanup: (() => void) | null = null
   let initGeneration = 0
   let bindingIssueNoticeShown = false
@@ -632,68 +656,94 @@ async function init() {
   }
 
   const initializeUserscriptModules = async () => {
-    const adapter = getAdapter()
+    const matchedAdapter = getAdapter()
 
-    if (adapter) {
-      if (activeAdapter === adapter) return
-      // 适配器切换（含 A→B 直接切换）时先销毁旧模块，避免订阅与观察者残留
-      teardownActiveModules()
-      activeAdapter = adapter
-      const generation = initGeneration
-      adapter.afterPropertiesSet({})
+    if (matchedAdapter) {
+      // 并发防抖：设置订阅与 SPA 导航可能同时触发初始化
+      if (pendingAdapter === matchedAdapter) return
+      pendingAdapter = matchedAdapter
+      try {
+        await Promise.all([
+          waitForHydration(useSettingsStore),
+          waitForHydration(useConversationsStore),
+          waitForHydration(useFoldersStore),
+          waitForHydration(useTagsStore),
+          waitForHydration(usePromptsStore),
+          waitForHydration(useClaudeSessionKeysStore),
+          waitForHydration(useReadingHistoryStore),
+        ])
 
-      await Promise.all([
-        waitForHydration(useSettingsStore),
-        waitForHydration(useConversationsStore),
-        waitForHydration(useFoldersStore),
-        waitForHydration(useTagsStore),
-        waitForHydration(usePromptsStore),
-        waitForHydration(useClaudeSessionKeysStore),
-        waitForHydration(useReadingHistoryStore),
-      ])
+        // 等待期间适配器可能已被更新的调用取代（SPA 导航）
+        if (pendingAdapter !== matchedAdapter) return
 
-      const siteId = adapter.getSiteId()
-      const siteInstanceKey = adapter.getSiteInstanceKey()
-      if (adapter.canClaimLegacySiteData()) {
-        claimLegacySiteSettings(siteId, siteInstanceKey)
+        const settings = getSettingsState()
+
+        // 内置适配器被停用时跳过，允许已安装的 SitePack 接管同站点；
+        // 无接管适配器则完全停用
+        const adapter = getEffectiveAdapter(settings.disabledSites)
+        if (!adapter) {
+          teardownActiveModules()
+          return
+        }
+        // 有效适配器未变化（例如同站点 SPA 导航）时不重复初始化
+        if (activeAdapter === adapter) return
+
+        // 适配器切换（含 A→B 直接切换）时先销毁旧模块，避免订阅与观察者残留
+        teardownActiveModules()
+        activeAdapter = adapter
+        const generation = initGeneration
+        adapter.afterPropertiesSet({})
+
+        const siteId = adapter.getSiteId()
+        const siteInstanceKey = adapter.getSiteInstanceKey()
+        if (adapter.canClaimLegacySiteData()) {
+          claimLegacySiteSettings(siteId, siteInstanceKey)
+        }
+
+        // ========== 初始化所有核心模块（使用共享模块） ==========
+        const {
+          initCoreModules,
+          subscribeModuleUpdates,
+          initUrlChangeObserver,
+          destroyCoreModules,
+        } = await import("~core/modules-init")
+        destroyCoreModulesFn = destroyCoreModules
+
+        const ctx = {
+          adapter,
+          settings,
+          siteId,
+          siteInstanceKey,
+          isStale: () => generation !== initGeneration || activeAdapter !== adapter,
+        }
+
+        await initCoreModules(ctx)
+
+        // 初始化 NetworkMonitor 消息监听器（必须显式调用以避免 tree-shaking）
+        initNetworkMonitor()
+
+        // 订阅设置变化
+        const unsubscribeModuleUpdates = subscribeModuleUpdates(ctx)
+
+        // 初始化 URL 变化监听 (SPA 导航)
+        const cleanupUrlChangeObserver = initUrlChangeObserver(ctx)
+
+        const cleanup = () => {
+          unsubscribeModuleUpdates()
+          cleanupUrlChangeObserver()
+        }
+
+        // 异步窗口内适配器可能已切换或被清空；过期初始化结果立即销毁，避免泄漏
+        if (generation !== initGeneration || activeAdapter !== adapter) {
+          cleanup()
+          return
+        }
+        activeModulesCleanup = cleanup
+      } finally {
+        if (pendingAdapter === matchedAdapter) {
+          pendingAdapter = null
+        }
       }
-      const settings = getSettingsState()
-
-      // ========== 初始化所有核心模块（使用共享模块） ==========
-      const { initCoreModules, subscribeModuleUpdates, initUrlChangeObserver, destroyCoreModules } =
-        await import("~core/modules-init")
-      destroyCoreModulesFn = destroyCoreModules
-
-      const ctx = {
-        adapter,
-        settings,
-        siteId,
-        siteInstanceKey,
-        isStale: () => generation !== initGeneration || activeAdapter !== adapter,
-      }
-
-      await initCoreModules(ctx)
-
-      // 初始化 NetworkMonitor 消息监听器（必须显式调用以避免 tree-shaking）
-      initNetworkMonitor()
-
-      // 订阅设置变化
-      const unsubscribeModuleUpdates = subscribeModuleUpdates(ctx)
-
-      // 初始化 URL 变化监听 (SPA 导航)
-      const cleanupUrlChangeObserver = initUrlChangeObserver(ctx)
-
-      const cleanup = () => {
-        unsubscribeModuleUpdates()
-        cleanupUrlChangeObserver()
-      }
-
-      // 异步窗口内适配器可能已切换或被清空；过期初始化结果立即销毁，避免泄漏
-      if (generation !== initGeneration || activeAdapter !== adapter) {
-        cleanup()
-        return
-      }
-      activeModulesCleanup = cleanup
     } else {
       teardownActiveModules()
 
@@ -716,6 +766,18 @@ async function init() {
   }
 
   await initializeUserscriptModules()
+
+  // 内置站点停用状态即时生效：停用 → 回收全部核心模块；重新启用 → 重新初始化
+  subscribeSettings((newSettings) => {
+    if (!getAdapter()) return
+    const effectiveAdapter = getEffectiveAdapter(newSettings.disabledSites)
+    if (!effectiveAdapter) {
+      // 无有效适配器（内置已停用且无 SitePack 接管）：回收全部核心模块
+      if (activeAdapter) teardownActiveModules()
+      return
+    }
+    if (effectiveAdapter !== activeAdapter) void initializeUserscriptModules()
+  })
 
   const stopBroadcaster = startPageUrlChangeBroadcaster()
   window.addEventListener(EVENT_PAGE_URL_CHANGE, () => {
