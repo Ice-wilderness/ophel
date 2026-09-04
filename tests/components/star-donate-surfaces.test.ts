@@ -101,9 +101,11 @@ describe("star and donate surfaces", () => {
     expect(source).toContain("GithubIcon")
     expect(source).toContain("GITHUB_REPO_URL")
     expect(source).toContain('t("giveStar")')
-    // 赞助入口按语言分流（zh-CN 爱发电，其余 Ko-fi），文案统一用 kofiSupport（中文即“赞助支持”）
+    // 赞助入口按语言分流：zh-CN 跳转“关于-赞助支持”（微信/支付宝扫码），其余走 Ko-fi；
+    // 文案统一用 kofiSupport（中文即“赞助支持”）
     expect(source).toContain("getDonateChannels")
     expect(source).toContain("donateChannels.primaryUrl")
+    expect(source).toContain("onOpenSponsor")
     expect(source).toContain('t("kofiSupport")')
     expect(source).toContain("onOpenFullChangelog")
     expect(source).toContain('t("releaseNotesViewFull")')
@@ -134,6 +136,34 @@ describe("star and donate surfaces", () => {
     expect(releaseNotesCss).not.toContain(
       ".gh-release-notes-primary { border: 1px solid var(--gh-primary, #4285f4);",
     )
+  })
+
+  it("routes the zh-CN release notes donate entry to the About sponsor section", () => {
+    // 中文下更新日志页脚的赞助按钮不再外链爱发电，而是打开“关于-赞助支持”
+    expect(aboutSource).toContain("data-setting-id={ABOUT_SPONSOR_SETTING_ID}")
+    const app = compact(appSource)
+    expect(app).toContain("onOpenSponsor={openSponsorFromReleaseNotes}")
+    expect(app).toContain("detail: { page: NAV_IDS.ABOUT, settingId: ABOUT_SPONSOR_SETTING_ID },")
+    const options = compact(optionsSource)
+    expect(options).toContain("setActivePage(NAV_IDS.ABOUT)")
+    expect(options).toContain(
+      "setLocateRequest({ settingId: ABOUT_SPONSOR_SETTING_ID, token: Date.now() })",
+    )
+  })
+
+  it("routes the zh-CN sidebar and popup donate entries to the About sponsor section", () => {
+    // 中文下侧边栏和 popup 的赞助入口同样跳“关于-赞助支持”，不再直连爱发电登录墙
+    const sidebar = compact(sidebarSource)
+    expect(sidebar).toContain('donateChannels.kind === "zh-CN"')
+    expect(sidebar).toContain(
+      "detail: { page: NAV_IDS.ABOUT, settingId: ABOUT_SPONSOR_SETTING_ID },",
+    )
+    const options = compact(optionsSource)
+    expect(options).toContain('window.addEventListener("ophel:navigateSettingsPage"')
+    const popup = compact(popupSource)
+    expect(popup).toContain("openOptionsPage(NAV_IDS.ABOUT, ABOUT_SPONSOR_SETTING_ID)")
+    expect(popup).toContain('if (page) params.set("page", page)')
+    expect(popup).toContain('if (settingId) params.set("settingId", settingId)')
   })
 
   it("points sidebar and popup coffee actions at the shared donate primary URL", () => {

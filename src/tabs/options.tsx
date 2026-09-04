@@ -16,7 +16,12 @@ import {
   SearchIcon,
   SitePacksIcon,
 } from "~components/icons"
-import { resolveSettingsNavigateDetail } from "~constants"
+import {
+  ABOUT_SPONSOR_SETTING_ID,
+  NAV_IDS,
+  resolveSettingsNavigateDetail,
+  type SettingsNavigateDetail,
+} from "~constants"
 import { useHasUnseenReleaseNotes } from "~hooks/useHasUnseenReleaseNotes"
 import { platform } from "~platform"
 import {
@@ -135,6 +140,26 @@ const OptionsPage = () => {
         setLocateRequest({ settingId: resolved.settingId, token: Date.now() })
       }
     }
+  }, [])
+
+  // 监听页内设置导航事件（如侧边栏 zh-CN 赞助入口跳“关于-赞助支持”）
+  useEffect(() => {
+    const handleNavigate = (e: CustomEvent<SettingsNavigateDetail>) => {
+      const resolved = resolveSettingsNavigateDetail(e.detail || {})
+
+      if (resolved.page && NAV_ITEMS.some((item) => item.id === resolved.page)) {
+        setActivePage(resolved.page)
+      }
+
+      setInitialSubTab(resolved.subTab)
+
+      if (resolved.settingId) {
+        setLocateRequest({ settingId: resolved.settingId, token: Date.now() })
+      }
+    }
+    window.addEventListener("ophel:navigateSettingsPage", handleNavigate as EventListener)
+    return () =>
+      window.removeEventListener("ophel:navigateSettingsPage", handleNavigate as EventListener)
   }, [])
 
   // URL 深链定位并高亮目标设置项
@@ -386,6 +411,12 @@ const OptionsPage = () => {
           fullChangelogUrl={fullChangelogUrl}
           onClose={() => setIsReleaseNotesOpen(false)}
           onOpenFullChangelog={() => platform.openTab(fullChangelogUrl)}
+          // 中文下赞助按钮跳回本页“关于-赞助支持”区块并高亮定位
+          onOpenSponsor={() => {
+            setIsReleaseNotesOpen(false)
+            setActivePage(NAV_IDS.ABOUT)
+            setLocateRequest({ settingId: ABOUT_SPONSOR_SETTING_ID, token: Date.now() })
+          }}
         />
       ) : null}
     </div>
