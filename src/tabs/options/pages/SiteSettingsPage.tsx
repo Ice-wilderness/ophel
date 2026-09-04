@@ -11,8 +11,8 @@ import {
   getFeatureCapabilitiesSignature,
   type SitePackCapability,
 } from "~adapters/feature-capabilities"
-import { PageContentIcon as LayoutIcon } from "~components/icons"
-import { Button, ConfirmDialog, NumberInput, Slider } from "~components/ui"
+import { PageContentIcon as LayoutIcon, PowerIcon } from "~components/icons"
+import { ConfirmDialog, NumberInput, Slider, Tooltip } from "~components/ui"
 import { LAYOUT_CONFIG, SITE_IDS, SITE_SETTINGS_TAB_IDS, isBuiltinSiteId } from "~constants"
 import { platform } from "~platform"
 import { useSettingsStore } from "~stores/settings-store"
@@ -225,7 +225,23 @@ const SiteSettingsPage: React.FC<SiteSettingsPageProps> = ({
 
   return (
     <div>
-      <PageTitle title={t("navSiteSettings")} Icon={LayoutIcon} />
+      <PageTitle
+        title={t("navSiteSettings")}
+        Icon={LayoutIcon}
+        action={
+          canDisableCurrentSite ? (
+            <Tooltip content={t("disableSiteEntryLabel")}>
+              <button
+                type="button"
+                className="settings-site-disable-icon-btn"
+                aria-label={t("disableSiteEntryLabel")}
+                onClick={() => setShowDisableSiteConfirm(true)}>
+                <PowerIcon size={16} />
+              </button>
+            </Tooltip>
+          ) : undefined
+        }
+      />
       {isCommunitySitePack && (
         <div className="settings-site-pack-notice" role="note">
           <span className="settings-site-pack-badge">{t("communitySitePackBadge")}</span>
@@ -240,22 +256,6 @@ const SiteSettingsPage: React.FC<SiteSettingsPageProps> = ({
         </div>
       )}
       <p className="settings-page-desc">{t("siteSettingsPageDesc")}</p>
-
-      {canDisableCurrentSite && (
-        <SettingCard title={t("disableSiteCardTitle")}>
-          <SettingRow
-            label={t("disableSiteEntryLabel")}
-            description={t("disableSiteEntryDesc", { site: adapter?.getName() ?? siteId })}>
-            <Button
-              type="button"
-              size="sm"
-              variant="danger"
-              onClick={() => setShowDisableSiteConfirm(true)}>
-              {t("disableSiteAction")}
-            </Button>
-          </SettingRow>
-        </SettingCard>
-      )}
 
       <TabGroup tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
@@ -765,7 +765,7 @@ const SiteSettingsPage: React.FC<SiteSettingsPageProps> = ({
 
       {showDisableSiteConfirm && (
         <ConfirmDialog
-          title={t("disableSiteConfirmTitle")}
+          title={t("disableSiteConfirmTitle", { site: adapter?.getName() ?? siteId })}
           message={t("disableSiteConfirmDesc", { site: adapter?.getName() ?? siteId })}
           confirmText={t("disableSiteConfirmAction")}
           danger
