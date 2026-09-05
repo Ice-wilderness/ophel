@@ -170,7 +170,7 @@ export interface GeminiSiteConfig extends BuiltinSiteConfig {
 }
 
 /** 内置修复修改默认配置时必须递增，使旧缓存 patch 自动失效。 */
-export const GEMINI_CONFIG_VERSION = 3
+export const GEMINI_CONFIG_VERSION = 4
 
 const createGeminiConfig = (): GeminiSiteConfig => {
   const userQuery = "user-query"
@@ -194,7 +194,7 @@ const createGeminiConfig = (): GeminiSiteConfig => {
   const canvasArtifactContainer = ".immersive-artifact-container"
   const canvasCodeBlock = "code-block"
   const canvasCodeEditor = 'xap-code-editor[data-test-id="code-editor"]'
-  const messageWidth = ".conversation-container"
+  const messageWidth = ".conversation-container, conversation-container"
   const inputWidth = ".input-area-container"
   const layoutScope = "bard-sidenav-content, body:not(:has(bard-sidenav-content)) main.chat-app"
   const markdownFixerSourceAttributeKeywords = [
@@ -245,7 +245,13 @@ const createGeminiConfig = (): GeminiSiteConfig => {
         'button[aria-label*="Send"]',
         'button[aria-label*="发送"]',
         ".send-button",
+        ".send-button.submit",
+        "button.send-button.submit",
+        "gem-icon-button.send-button.submit",
+        ".send-button-container button",
         '[data-testid*="send"]',
+        '[data-test-id*="send-button"]',
+        'button:has(mat-icon[fonticon="send"])',
       ],
       responseContainer,
       chatContent: [
@@ -268,7 +274,14 @@ const createGeminiConfig = (): GeminiSiteConfig => {
         '[data-test-id="temp-chat-button"]',
         'button[aria-label="临时对话"]',
       ],
-      stopButton: ['button:has(mat-icon[fonticon="stop"])', 'mat-icon[fonticon="stop"]'],
+      stopButton: [
+        'button:has(mat-icon[fonticon="stop"])',
+        'mat-icon[fonticon="stop"]',
+        ".send-button.stop",
+        "button.send-button.stop",
+        "gem-icon-button.send-button.stop",
+        '[data-test-id*="stop-button"]',
+      ],
       scrollContainer: [responseContainer],
       sidebarScrollContainer: conversationList,
     },
@@ -283,7 +296,13 @@ const createGeminiConfig = (): GeminiSiteConfig => {
       shadow: false,
     },
     generating: {
-      existsSelectors: ['mat-icon[fonticon="stop"]'],
+      existsSelectors: [
+        'mat-icon[fonticon="stop"]',
+        ".send-button.stop",
+        "button.send-button.stop",
+        "gem-icon-button.send-button.stop",
+        '[data-test-id*="stop-button"]',
+      ],
     },
     networkMonitor: {
       urlPatterns: ["BardFrontendService", "StreamGenerate"],
@@ -292,12 +311,13 @@ const createGeminiConfig = (): GeminiSiteConfig => {
     modelSwitcher: {
       selectorButtonSelectors: [
         ".input-area-switch-label",
+        '[data-test-id="bard-mode-menu-button"]',
         ".model-selector",
         '[data-test-id="model-selector"]',
         '[aria-label*="model"]',
         'button[aria-haspopup="menu"]',
       ],
-      menuItemSelector: '.mode-title, [role="menuitem"], [role="option"]',
+      menuItemSelector: '.bard-mode-list-button, .mode-title, [role="menuitem"], [role="option"]',
       checkInterval: 1000,
       maxAttempts: 15,
       menuRenderDelay: 300,
@@ -305,7 +325,7 @@ const createGeminiConfig = (): GeminiSiteConfig => {
     export: {
       userQuerySelector: userQuery,
       assistantResponseSelector: `${assistantResponse}, .model-response-container .markdown`,
-      turnSelector: ".conversation-turn",
+      turnSelector: ".conversation-container, conversation-container, .conversation-turn",
       useShadowDOM: false,
     },
     widthSelectors: [
@@ -318,6 +338,20 @@ const createGeminiConfig = (): GeminiSiteConfig => {
         selector: inputWidth,
         property: "max-width",
         extraCss: "width: 100% !important; min-width: 0 !important;",
+      },
+      {
+        selector:
+          ".md-content > *, message-content .markdown > *, thinking-overlay, .response-footer, .response-container-header, .response-container-footer, model-response-disclaimers, election-info-disclaimer, finance-info-disclaimer",
+        property: "max-width",
+        value: "100%",
+        noCenter: true,
+      },
+      {
+        selector: "message-actions",
+        property: "max-width",
+        value: "100%",
+        noCenter: true,
+        extraCss: "margin-inline-start: 0 !important;",
       },
       {
         selector: ".table-block.new-table-style",
@@ -347,6 +381,15 @@ const createGeminiConfig = (): GeminiSiteConfig => {
     cleanMode: {
       hide: [
         "hallucination-disclaimer",
+        "condensed-tos-disclaimer",
+        "model-response-disclaimers",
+        "election-info-disclaimer",
+        "finance-info-disclaimer",
+        "freemium-rag-disclaimer",
+        "freemium-file-upload-near-quota-disclaimer",
+        "freemium-file-upload-quota-exceeded-disclaimer",
+        "sensitive-memories-banner",
+        "bot-banner",
         "g1-dynamic-upsell-button",
         ".share-viewer_footer_disclaimer",
         'share-landing-page immersive-share-landing-page .page:has(structured-content-container[data-test-id="deep-research-block"]) > .footer',
@@ -452,7 +495,8 @@ const createGeminiConfig = (): GeminiSiteConfig => {
       visuallyHidden,
       userQueryText: ".query-text",
       userQueryLine: ".query-text-line",
-      exportMessageSource: "message-content, .conversation-turn",
+      exportMessageSource:
+        "message-content, .conversation-container, conversation-container, .conversation-turn",
       immersivePanel,
       exportImageScope: [
         ".attachment-container.generated-images",
@@ -470,6 +514,8 @@ const createGeminiConfig = (): GeminiSiteConfig => {
       assistantExportNoise: [
         visuallyHidden,
         "model-thoughts",
+        "thinking-overlay",
+        "sources-list",
         canvasEntryChip,
         "gem-processing-card",
         canvasCard,
@@ -481,6 +527,7 @@ const createGeminiConfig = (): GeminiSiteConfig => {
         "mat-icon",
         "share-button",
         "copy-button",
+        "message-actions",
         "download-generated-image-button",
         ".generated-image-controls",
         ".loader",
@@ -573,14 +620,15 @@ const createGeminiConfig = (): GeminiSiteConfig => {
       outlineMessageContent: "message-content",
       outlineUserMetadataButton: 'button[jslog*="BardVeMetadataKey"]',
       outlineAssistantMarkdown: ".model-response-text, message-content",
-      outlineThoughts: "model-thoughts",
+      outlineThoughts: "model-thoughts, thinking-overlay",
       modelName: ".input-area-switch-label",
       layoutScope,
       immersiveLayout: "chat-window.immersives-mode:not(.mobile-device)",
       chatColumnScope: "chat-window .chat-container",
-      messageSafeArea: responseContainer,
+      messageSafeArea: "infinite-scroller.chat-history",
       inputSafeArea: "input-container",
-      newChatInputSafeArea: "chat-window.center-input-layout .input-area-container.is-zero-state",
+      newChatInputSafeArea:
+        "chat-window.center-input-layout .input-area-container.is-zero-state, .center-input-layout .input-area-container, .zero-state-theme .input-area-container",
       userQueryWidth: ".user-query-bubble-with-background:not(.edit-mode)",
       // Gemini Spark（/spark 路由）：会话列表是主内容区/左窗格里的任务卡片，没有侧边栏列表
       sparkGoalCard: 'remy-task-list .goal-card[id^="goal-c_"]',
