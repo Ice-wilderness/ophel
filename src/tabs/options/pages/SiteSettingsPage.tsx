@@ -263,7 +263,7 @@ const SiteSettingsPage: React.FC<SiteSettingsPageProps> = ({
       {activeTab === SITE_SETTINGS_TAB_IDS.LAYOUT && (
         <>
           {supportsPanelAvoidance && (
-            <SettingCard title={panelAvoidanceTitle}>
+            <SettingCard title={panelAvoidanceTitle} settingId="layout-panel-avoidance-card">
               <ToggleRow
                 label={t("panelAvoidanceLabel")}
                 description={t("panelAvoidanceDesc")}
@@ -289,7 +289,7 @@ const SiteSettingsPage: React.FC<SiteSettingsPageProps> = ({
 
           {/* 页面宽度卡片 */}
           {supportsPageWidth && (
-            <SettingCard title={t("layoutSettingsTitle")}>
+            <SettingCard title={t("layoutSettingsTitle")} settingId="layout-page-width-card">
               <ToggleRow
                 label={t("enablePageWidth")}
                 description={t("pageWidthDesc")}
@@ -334,7 +334,9 @@ const SiteSettingsPage: React.FC<SiteSettingsPageProps> = ({
 
           {/* 用户问题宽度卡片 */}
           {supportsUserQueryWidth && (
-            <SettingCard title={t("userQueryWidthSettings")}>
+            <SettingCard
+              title={t("userQueryWidthSettings")}
+              settingId="layout-user-query-width-card">
               <ToggleRow
                 label={t("enableUserQueryWidth")}
                 description={t("userQueryWidthDesc")}
@@ -383,7 +385,7 @@ const SiteSettingsPage: React.FC<SiteSettingsPageProps> = ({
 
           {/* 禅模式 (Zen Mode) 卡片 */}
           {supportsZenMode && (
-            <SettingCard title={t("zenModeTitle")}>
+            <SettingCard title={t("zenModeTitle")} settingId="layout-zen-mode-card">
               <ToggleRow
                 label={t("zenModeLabel")}
                 description={t("zenModeDesc")}
@@ -436,7 +438,7 @@ const SiteSettingsPage: React.FC<SiteSettingsPageProps> = ({
 
           {/* 净化模式 (Clean Mode) 卡片 */}
           {supportsCleanMode && (
-            <SettingCard title={t("cleanModeTitle")}>
+            <SettingCard title={t("cleanModeTitle")} settingId="layout-clean-mode-card">
               <ToggleRow
                 label={t("cleanModeLabel")}
                 description={t("cleanModeDesc")}
@@ -466,7 +468,10 @@ const SiteSettingsPage: React.FC<SiteSettingsPageProps> = ({
 
       {/* ========== Gemini 专属 Tab ========== */}
       {activeTab === "gemini" && (
-        <SettingCard title={t("geminiSettingsTab")} description={t("contentProcessingDesc")}>
+        <SettingCard
+          title={t("geminiSettingsTab")}
+          description={t("contentProcessingDesc")}
+          settingId="gemini-settings-card">
           <ToggleRow
             label={t("markdownFixLabel")}
             description={t("markdownFixDesc")}
@@ -585,7 +590,10 @@ const SiteSettingsPage: React.FC<SiteSettingsPageProps> = ({
 
       {/* ========== AI Studio 专属 Tab ========== */}
       {activeTab === SITE_IDS.AISTUDIO && (
-        <SettingCard title={t("aistudioSettingsTitle")} description={t("aistudioSettingsDesc")}>
+        <SettingCard
+          title={t("aistudioSettingsTitle")}
+          description={t("aistudioSettingsDesc")}
+          settingId="aistudio-settings-card">
           {/* 界面状态开关 */}
           <ToggleRow
             label={t("aistudioCollapseNavbar")}
@@ -700,7 +708,10 @@ const SiteSettingsPage: React.FC<SiteSettingsPageProps> = ({
 
       {/* ========== ChatGPT 专属 Tab ========== */}
       {activeTab === SITE_IDS.CHATGPT && (
-        <SettingCard title={t("chatgptSettingsTitle")} description={t("chatgptSettingsDesc")}>
+        <SettingCard
+          title={t("chatgptSettingsTitle")}
+          description={t("chatgptSettingsDesc")}
+          settingId="chatgpt-settings-card">
           <ToggleRow
             label={t("chatgptMarkdownFixLabel")}
             description={t("chatgptMarkdownFixDesc")}
