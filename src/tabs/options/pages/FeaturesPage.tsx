@@ -1269,6 +1269,152 @@ const FeaturesPage: React.FC<FeaturesPageProps> = ({ siteId, initialTab }) => {
       {/* ========== 会话 Tab ========== */}
       {activeTab === FEATURES_TAB_IDS.CONVERSATIONS && (
         <>
+          {/* 导出设置卡片 */}
+          <SettingCard title={t("exportSettings")} settingId="export-settings-card">
+            <ToggleRow
+              label={t("exportShowDialogLabel")}
+              description={t("exportShowDialogDesc")}
+              settingId="export-show-dialog"
+              checked={settings.export?.exportShowDialog ?? true}
+              onChange={() =>
+                updateNestedSetting(
+                  "export",
+                  "exportShowDialog",
+                  !(settings.export?.exportShowDialog ?? true),
+                )
+              }
+            />
+
+            <SettingRow
+              label={t("exportDefaultFormatLabel")}
+              description={t("exportDefaultFormatDesc")}
+              settingId="export-default-format">
+              <SelectDropdown
+                className="settings-select-dropdown"
+                buttonClassName="settings-select"
+                options={defaultExportFormatOptions}
+                value={defaultExportFormat}
+                ariaLabel={t("exportDefaultFormatLabel")}
+                onChange={(value) =>
+                  updateNestedSetting("export", "defaultExportFormat", value as ExportFormatSetting)
+                }
+              />
+            </SettingRow>
+
+            <SettingRow
+              label={t("exportPackagingLabel")}
+              description={t("exportPackagingDesc")}
+              settingId="export-packaging">
+              <SelectDropdown
+                className="settings-select-dropdown"
+                buttonClassName="settings-select"
+                options={exportPackagingOptions}
+                value={exportPackaging}
+                ariaLabel={t("exportPackagingLabel")}
+                onChange={(value) =>
+                  updateNestedSetting("export", "packaging", value as ExportPackaging)
+                }
+              />
+            </SettingRow>
+
+            <ToggleRow
+              label={t("exportIncludeThoughtsLabel")}
+              description={t("exportIncludeThoughtsDesc")}
+              settingId="export-include-thoughts"
+              checked={settings.export?.includeThoughts ?? true}
+              onChange={() =>
+                updateNestedSetting(
+                  "export",
+                  "includeThoughts",
+                  !(settings.export?.includeThoughts ?? true),
+                )
+              }
+            />
+
+            <ToggleRow
+              label={t("exportShowIndexLabel")}
+              description={t("exportShowIndexDesc")}
+              settingId="export-show-index"
+              checked={settings.export?.exportShowIndex ?? false}
+              onChange={() =>
+                updateNestedSetting(
+                  "export",
+                  "exportShowIndex",
+                  !(settings.export?.exportShowIndex ?? false),
+                )
+              }
+            />
+
+            <ToggleRow
+              label={t("exportFilenameTimestamp")}
+              description={t("exportFilenameTimestampDesc")}
+              settingId="export-filename-timestamp"
+              checked={settings.export?.exportFilenameTimestamp ?? false}
+              onChange={() =>
+                updateNestedSetting(
+                  "export",
+                  "exportFilenameTimestamp",
+                  !settings.export?.exportFilenameTimestamp,
+                )
+              }
+            />
+
+            <SettingRow
+              label={t("exportMarkdownDividerLabel")}
+              description={t("exportMarkdownDividerDesc")}
+              settingId="export-markdown-divider">
+              <LazyInput
+                className="settings-input"
+                value={settings.export?.exportMarkdownDivider ?? "---"}
+                onChange={(val) => updateNestedSetting("export", "exportMarkdownDivider", val)}
+                placeholder="---"
+                style={{ width: "180px" }}
+              />
+            </SettingRow>
+
+            <SettingRow
+              label={t("exportCustomUserName")}
+              description={t("exportCustomUserNameDesc")}
+              settingId="export-custom-user-name">
+              <LazyInput
+                className="settings-input"
+                value={settings.export?.customUserName || ""}
+                onChange={(val) => updateNestedSetting("export", "customUserName", val)}
+                placeholder="User"
+                style={{ width: "180px" }}
+              />
+            </SettingRow>
+
+            <SettingRow
+              label={t("exportCustomModelName")}
+              description={t("exportCustomModelNameDesc")}
+              settingId="export-custom-model-name">
+              <LazyInput
+                className="settings-input"
+                value={settings.export?.customModelName || ""}
+                onChange={(val) => updateNestedSetting("export", "customModelName", val)}
+                placeholder="Site Name"
+                style={{ width: "180px" }}
+              />
+            </SettingRow>
+
+            <SettingRow
+              label={t("exportStyleLabel")}
+              description={t("exportStyleDesc")}
+              settingId="export-style">
+              <SelectDropdown
+                className="settings-select-dropdown"
+                buttonClassName="settings-select"
+                options={exportStyleOptions}
+                value={exportStyle}
+                ariaLabel={t("exportStyleLabel")}
+                onChange={(value) =>
+                  updateNestedSetting("export", "exportStyle", value as ExportStyle)
+                }
+              />
+            </SettingRow>
+          </SettingCard>
+
           <SettingCard
             title={t("conversationsSettingsTitle")}
             description={t("conversationsSettingsDesc")}
@@ -1316,152 +1462,6 @@ const FeaturesPage: React.FC<FeaturesPageProps> = ({ siteId, initialTab }) => {
                 )
               }
             />
-          </SettingCard>
-
-          {/* 导出设置卡片 */}
-          <SettingCard title={t("exportSettings")} settingId="export-settings-card">
-            <SettingRow
-              label={t("exportDefaultFormatLabel")}
-              description={t("exportDefaultFormatDesc")}
-              settingId="export-default-format">
-              <SelectDropdown
-                className="settings-select-dropdown"
-                buttonClassName="settings-select"
-                options={defaultExportFormatOptions}
-                value={defaultExportFormat}
-                ariaLabel={t("exportDefaultFormatLabel")}
-                onChange={(value) =>
-                  updateNestedSetting("export", "defaultExportFormat", value as ExportFormatSetting)
-                }
-              />
-            </SettingRow>
-
-            <SettingRow
-              label={t("exportPackagingLabel")}
-              description={t("exportPackagingDesc")}
-              settingId="export-packaging">
-              <SelectDropdown
-                className="settings-select-dropdown"
-                buttonClassName="settings-select"
-                options={exportPackagingOptions}
-                value={exportPackaging}
-                ariaLabel={t("exportPackagingLabel")}
-                onChange={(value) =>
-                  updateNestedSetting("export", "packaging", value as ExportPackaging)
-                }
-              />
-            </SettingRow>
-
-            <SettingRow
-              label={t("exportStyleLabel")}
-              description={t("exportStyleDesc")}
-              settingId="export-style">
-              <SelectDropdown
-                className="settings-select-dropdown"
-                buttonClassName="settings-select"
-                options={exportStyleOptions}
-                value={exportStyle}
-                ariaLabel={t("exportStyleLabel")}
-                onChange={(value) =>
-                  updateNestedSetting("export", "exportStyle", value as ExportStyle)
-                }
-              />
-            </SettingRow>
-
-            <ToggleRow
-              label={t("exportFilenameTimestamp")}
-              description={t("exportFilenameTimestampDesc")}
-              settingId="export-filename-timestamp"
-              checked={settings.export?.exportFilenameTimestamp ?? false}
-              onChange={() =>
-                updateNestedSetting(
-                  "export",
-                  "exportFilenameTimestamp",
-                  !settings.export?.exportFilenameTimestamp,
-                )
-              }
-            />
-
-            <ToggleRow
-              label={t("exportIncludeThoughtsLabel")}
-              description={t("exportIncludeThoughtsDesc")}
-              settingId="export-include-thoughts"
-              checked={settings.export?.includeThoughts ?? true}
-              onChange={() =>
-                updateNestedSetting(
-                  "export",
-                  "includeThoughts",
-                  !(settings.export?.includeThoughts ?? true),
-                )
-              }
-            />
-
-            <ToggleRow
-              label={t("exportShowIndexLabel")}
-              description={t("exportShowIndexDesc")}
-              settingId="export-show-index"
-              checked={settings.export?.exportShowIndex ?? false}
-              onChange={() =>
-                updateNestedSetting(
-                  "export",
-                  "exportShowIndex",
-                  !(settings.export?.exportShowIndex ?? false),
-                )
-              }
-            />
-
-            <ToggleRow
-              label={t("exportShowDialogLabel")}
-              description={t("exportShowDialogDesc")}
-              settingId="export-show-dialog"
-              checked={settings.export?.exportShowDialog ?? true}
-              onChange={() =>
-                updateNestedSetting(
-                  "export",
-                  "exportShowDialog",
-                  !(settings.export?.exportShowDialog ?? true),
-                )
-              }
-            />
-
-            <SettingRow
-              label={t("exportMarkdownDividerLabel")}
-              description={t("exportMarkdownDividerDesc")}
-              settingId="export-markdown-divider">
-              <LazyInput
-                className="settings-input"
-                value={settings.export?.exportMarkdownDivider ?? "---"}
-                onChange={(val) => updateNestedSetting("export", "exportMarkdownDivider", val)}
-                placeholder="---"
-                style={{ width: "180px" }}
-              />
-            </SettingRow>
-
-            <SettingRow
-              label={t("exportCustomUserName")}
-              description={t("exportCustomUserNameDesc")}
-              settingId="export-custom-user-name">
-              <LazyInput
-                className="settings-input"
-                value={settings.export?.customUserName || ""}
-                onChange={(val) => updateNestedSetting("export", "customUserName", val)}
-                placeholder="User"
-                style={{ width: "180px" }}
-              />
-            </SettingRow>
-
-            <SettingRow
-              label={t("exportCustomModelName")}
-              description={t("exportCustomModelNameDesc")}
-              settingId="export-custom-model-name">
-              <LazyInput
-                className="settings-input"
-                value={settings.export?.customModelName || ""}
-                onChange={(val) => updateNestedSetting("export", "customModelName", val)}
-                placeholder="Site Name"
-                style={{ width: "180px" }}
-              />
-            </SettingRow>
           </SettingCard>
         </>
       )}
