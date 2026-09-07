@@ -20,8 +20,12 @@ import { usePromptsStore } from "~stores/prompts-store"
 import { useSettingsStore } from "~stores/settings-store"
 import type { QueueItem } from "~stores/queue-store"
 import { useQueueItems, useQueueStore } from "~stores/queue-store"
-import { attachEditableKeyboardFocusGuard } from "~utils/dom-toolkit"
+import {
+  attachEditableKeyboardFocusGuard,
+  OPHEL_INTERACTION_LAYER_SELECTOR,
+} from "~utils/dom-toolkit"
 import { t } from "~utils/i18n"
+import { createWeakModalRegistry, isViewportCovering } from "~utils/page-modal-policy"
 import { parseQueueBatchInput, splitQueueLines, type QueueBatchSplitMode } from "~utils/queue-batch"
 import { showToast } from "~utils/toast"
 
@@ -259,6 +263,123 @@ export const QueueOverlay: React.FC<QueueOverlayProps> = ({ adapter, dispatcher 
     return () => window.removeEventListener("ophel:togglePromptQueue", handleToggle)
   }, [])
 
+  // ==================== 原生弹窗避让 ====================
+
+  // 胶囊/面板通过 portal 直接挂在页面 body 下,z-index(9998/9999)高于多数站点的
+  // 弹窗层级,会遮挡站点自身的对话框。这里监听页面 DOM,检测到站点原生弹窗出现时
+  // 临时隐藏队列悬浮层,弹窗关闭后自动恢复。
+  const [isPageModalOpen, setIsPageModalOpen] = useState(false)
+  // 隐藏前焦点是否在队列输入框内,供恢复显示时决定是否还回焦点
+  const hadInputFocusRef = useRef(false)
+
+  useEffect(() => {
+    // :modal 低版本浏览器不支持,探测失败则弃用该选择器
+    let modalDialogSupported = true
+    try {
+      document.querySelector("dialog:modal")
+    } catch {
+      modalDialogSupported = false
+    }
+
+    // 强信号仅 dialog:modal:showModal() 会让页面其余部分 inert,外部交互事件
+    // 根本到不了 document,下方的宽恕机制不可能被误触发,可见即算页面弹窗。
+    // aria-modal / role="alertdialog" 只是语义声明,站点可能误标在常驻容器上,
+    // 一律走 weakModals 注册表;popover 在 top layer,天然绘制在 overlay 之上,
+    // 不存在遮挡问题,不检测。
+    const strongModalSelector = modalDialogSupported ? "dialog:modal" : ""
+    const modalSelector = 'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]'
+
+    // 扩展自身 UI(批量导入弹窗、提示词编辑器等也 portal 在 body 下)不算页面弹窗
+    const ownUiSelector = `${OPHEL_INTERACTION_LAYER_SELECTOR}, .gh-queue-capsule, .gh-queue-panel`
+
+    const weakModals = createWeakModalRegistry()
+
+    const isBackdropLike = (el: HTMLElement): boolean => {
+      // 已知盲区:站点主布局容器若为 absolute/fixed 且铺满视口,点在其空白处会
+      // 被误认为点在遮罩上而不放行;此时任意一次按键仍会触发宽恕恢复 overlay,
+      // 影响温和,暂不加更复杂的启发式
+      const style = window.getComputedStyle(el)
+      if (style.position !== "fixed" && style.position !== "absolute") return false
+      return isViewportCovering(el.getBoundingClientRect(), {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      })
+    }
+
+    // 本地镜像 open 状态,用于识别跳变
+    let modalOpen = false
+
+    const checkPageModal = () => {
+      let open = false
+      const weakVisible: HTMLElement[] = []
+      for (const el of document.querySelectorAll(modalSelector)) {
+        if (!(el instanceof HTMLElement)) continue
+        if (el.closest(ownUiSelector)) continue
+        // display:none / 零面积的挂点容器(误标 aria-modal 等)不算可见
+        const rect = el.getBoundingClientRect()
+        if (rect.width === 0 || rect.height === 0) continue
+        if (window.getComputedStyle(el).visibility === "hidden") continue
+        if (strongModalSelector && el.matches(strongModalSelector)) {
+          open = true
+        } else {
+          weakVisible.push(el)
+        }
+      }
+      if (weakModals.update(weakVisible)) open = true
+      if (open && !modalOpen) {
+        // 此刻 portal 尚未卸载,可读到隐藏前的真实焦点;若站点弹窗已主动
+        // focus() 把焦点抢进弹窗,则保守记为不在输入框——宁可不还原,也不抢页面焦点
+        hadInputFocusRef.current = document.activeElement === inputRef.current
+      }
+      modalOpen = open
+      setIsPageModalOpen((prev) => (prev === open ? prev : open))
+    }
+
+    // 聊天页流式输出会频繁触发 DOM 变化,合并为 150ms 一次检查
+    let timer: number | null = null
+    const scheduleCheck = () => {
+      if (timer !== null) return
+      timer = window.setTimeout(() => {
+        timer = null
+        checkPageModal()
+      }, 150)
+    }
+
+    // 模态弹窗会阻断页面交互;用户在弱信号元素之外成功点击/按键,说明它
+    // 不阻断页面,放行这些元素。点在全屏遮罩上除外——那通常是真实弹窗的 backdrop
+    const handleInteraction = (e: Event) => {
+      // Escape 的语义是关闭弹窗而非与页面交互;弹窗未聚焦时 target 落在 body 上,
+      // 不能作为"弹窗不阻断页面"的证据
+      if (e.type === "keydown" && (e as KeyboardEvent).key === "Escape") return
+      const target = e.target
+      const changed = weakModals.forgiveOnOutsideInteraction(
+        target instanceof Element ? target : null,
+        {
+          onBackdrop:
+            e.type === "pointerdown" && target instanceof HTMLElement && isBackdropLike(target),
+        },
+      )
+      if (changed) scheduleCheck()
+    }
+
+    checkPageModal()
+    const observer = new MutationObserver(scheduleCheck)
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["open", "hidden", "class", "style", "aria-hidden", "aria-modal"],
+    })
+    document.addEventListener("pointerdown", handleInteraction, true)
+    document.addEventListener("keydown", handleInteraction, true)
+    return () => {
+      observer.disconnect()
+      document.removeEventListener("pointerdown", handleInteraction, true)
+      document.removeEventListener("keydown", handleInteraction, true)
+      if (timer !== null) window.clearTimeout(timer)
+    }
+  }, [])
+
   // 展开时聚焦输入框
   useEffect(() => {
     if (isExpanded && inputRef.current) {
@@ -266,11 +387,19 @@ export const QueueOverlay: React.FC<QueueOverlayProps> = ({ adapter, dispatcher 
     }
   }, [isExpanded])
 
+  // 站点弹窗关闭后 portal 重新挂载,输入框是全新节点。仅当隐藏前焦点就在
+  // 输入框内时才还回焦点,避免抢夺用户在页面上的焦点
+  useEffect(() => {
+    if (isPageModalOpen || !isExpanded || !hadInputFocusRef.current) return
+    hadInputFocusRef.current = false
+    setTimeout(() => inputRef.current?.focus(), 100)
+  }, [isExpanded, isPageModalOpen])
+
   useEffect(() => {
     if (!isBatchDialogOpen || batchSource !== "text") return
     const timeoutId = window.setTimeout(() => batchTextareaRef.current?.focus(), 60)
     return () => window.clearTimeout(timeoutId)
-  }, [batchSource, isBatchDialogOpen])
+  }, [batchSource, isBatchDialogOpen, isPageModalOpen])
 
   useEffect(() => {
     const panel = panelRef.current
@@ -280,7 +409,8 @@ export const QueueOverlay: React.FC<QueueOverlayProps> = ({ adapter, dispatcher 
 
     // 队列输入依赖本地 Enter / Escape 逻辑，改为冒泡阶段拦截以避免吞掉自身键盘处理。
     return attachEditableKeyboardFocusGuard(panel, { capture: false })
-  }, [isExpanded, position])
+    // 依赖 isPageModalOpen:恢复显示时 panel 是全新节点,必须重新挂监听
+  }, [isExpanded, isPageModalOpen, position])
 
   // 点击外部关闭
   useEffect(() => {
@@ -386,7 +516,8 @@ export const QueueOverlay: React.FC<QueueOverlayProps> = ({ adapter, dispatcher 
     return () => {
       textarea.removeEventListener("keydown", handleKeyDownCapture, true)
     }
-  }, [isExpanded, submitShortcut, handleSubmit])
+    // isPageModalOpen 恢复为 false 时 textarea 是全新节点,必须重新挂监听
+  }, [isExpanded, isPageModalOpen, submitShortcut, handleSubmit])
 
   const handleRemoveItem = useCallback(
     (id: string) => {
@@ -508,7 +639,8 @@ export const QueueOverlay: React.FC<QueueOverlayProps> = ({ adapter, dispatcher 
 
   useEffect(() => {
     adjustTextareaHeight()
-  }, [inputValue, adjustTextareaHeight])
+    // isPageModalOpen 恢复为 false 时 textarea 是全新节点,内联高度丢失,需要重算
+  }, [inputValue, isPageModalOpen, adjustTextareaHeight])
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputValue(e.target.value)
@@ -516,7 +648,7 @@ export const QueueOverlay: React.FC<QueueOverlayProps> = ({ adapter, dispatcher 
 
   // ==================== 渲染 ====================
 
-  if (!position) return null
+  if (!position || isPageModalOpen) return null
 
   // 挂载到 document.body，确保与 DialogOverlay 弹窗样式环境一致
   // （.gh-root 在 Shadow DOM 内，document.querySelector 取不到，历史上恒为 body）
