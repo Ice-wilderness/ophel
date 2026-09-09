@@ -31,7 +31,7 @@
   },
 
   "content": {
-    "assistantMermaid": true,
+    "assistantMermaid": false,
     "markdownFix": false,
     "watermarkRemoval": false,
     "formulaCopy": true,
@@ -263,7 +263,7 @@
   },
 
   "readingHistory": {
-    "persistence": true,
+    "persistence": false,
     "autoRestore": true,
     "cleanupDays": 3
   },

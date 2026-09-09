@@ -1,3 +1,4 @@
+import { isIgnoredMutation } from "~utils/dom-mutations"
 import { MagicCodex } from "~components/MagicCodex"
 import { isMacOS } from "~constants/shortcuts"
 import { buildStructuredTips } from "~utils/build-structured-tips"
@@ -1238,6 +1239,7 @@ export const OutlineTab: React.FC<OutlineTabProps> = ({
     let resizeObserver: ResizeObserver | null = null
     let scrollSyncFrame: number | null = null
     let outlineAutoScrollFrame: number | null = null
+    let contentSyncTimer: ReturnType<typeof setTimeout> | null = null
     const mutationObservers = new Map<Node, MutationObserver>()
 
     const handleResize = () => {
@@ -1248,12 +1250,20 @@ export const OutlineTab: React.FC<OutlineTabProps> = ({
     const observeRoot = (root: Node) => {
       if (mutationObservers.has(root)) return
 
-      const observer = new MutationObserver(() => {
-        manager.markScrollPositionsStale()
-        handleScroll()
+      const observer = new MutationObserver((mutations) => {
+        if (mutations.every((mutation) => isIgnoredMutation(mutation, ".gh-inline-bookmark")))
+          return
+        if (contentSyncTimer !== null) return
+
+        // 内容更新合批重测，真实滚动仍逐帧同步；不能每个 token 都重测整份大纲。
+        contentSyncTimer = setTimeout(() => {
+          contentSyncTimer = null
+          manager.markScrollPositionsStale()
+          handleScroll()
+        }, 100)
       })
 
-      observer.observe(root, { childList: true, subtree: true })
+      observer.observe(root, { childList: true, subtree: true, characterData: true })
       mutationObservers.set(root, observer)
     }
 
@@ -1385,6 +1395,10 @@ export const OutlineTab: React.FC<OutlineTabProps> = ({
       }
       mutationObservers.forEach((observer) => observer.disconnect())
       mutationObservers.clear()
+      if (contentSyncTimer !== null) {
+        clearTimeout(contentSyncTimer)
+        contentSyncTimer = null
+      }
       if (resizeObserver) {
         resizeObserver.disconnect()
         resizeObserver = null
