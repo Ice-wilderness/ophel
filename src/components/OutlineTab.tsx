@@ -232,9 +232,7 @@ const OUTLINE_FALLBACK_VIEWPORT_HEIGHT = 420
 const OUTLINE_HEIGHT_DRIFT_TOLERANCE = 1
 const OUTLINE_LOCATE_HIGHLIGHT_MS = 3000
 const OUTLINE_LOCATE_RETRY_DELAY_MS = 50
-const OUTLINE_LOCATE_MAX_RETRIES = Math.ceil(
-  OUTLINE_LOCATE_HIGHLIGHT_MS / OUTLINE_LOCATE_RETRY_DELAY_MS,
-)
+const OUTLINE_LOCATE_MAX_RETRIES = 20
 
 type OutlineScrollBlock = "start" | "center" | "end" | "nearest"
 
@@ -769,8 +767,9 @@ export const OutlineTab: React.FC<OutlineTabProps> = ({
     itemIndexByNodeIndex: new Map(),
   })
   const jumpRequestIdRef = useRef(0)
-  const locateHighlightRef = useRef<{
-    element: Element
+  const activeLocateHighlightRef = useRef<{
+    index: number
+    requestId: number
     timer: ReturnType<typeof setTimeout>
   } | null>(null)
   const pendingLocateHighlightRef = useRef<{
@@ -778,6 +777,7 @@ export const OutlineTab: React.FC<OutlineTabProps> = ({
     requestId: number
   } | null>(null)
   const locateHighlightRequestIdRef = useRef(0)
+  const locateRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const userScrollingOutlineRef = useRef(false)
   const userScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const outlineScrollFrameRef = useRef<number | null>(null)
@@ -1023,11 +1023,34 @@ export const OutlineTab: React.FC<OutlineTabProps> = ({
     [applySingleSyncHighlight],
   )
 
+  const cancelLocateRetry = useCallback(() => {
+    if (locateRetryTimerRef.current) {
+      clearTimeout(locateRetryTimerRef.current)
+      locateRetryTimerRef.current = null
+    }
+  }, [])
+
+  // 用户手动滚动中止定位时，清理未激活的 pending 高亮与 forceVisible，
+  // 避免目标行之后挂载时延迟触发高亮；已激活的高亮不受影响
+  const abortPendingLocate = useCallback(() => {
+    const pending = pendingLocateHighlightRef.current
+    if (!pending) return
+    if (activeLocateHighlightRef.current?.requestId === pending.requestId) return
+
+    locateHighlightRequestIdRef.current += 1
+    pendingLocateHighlightRef.current = null
+    manager.clearForceVisible()
+  }, [manager])
+
   const applyPendingLocateHighlight = useCallback(
     (index: number): boolean => {
       const pending = pendingLocateHighlightRef.current
-      if (!pending || pending.index !== index || locateHighlightRef.current) {
-        return false
+      if (!pending || pending.index !== index) {
+        return activeLocateHighlightRef.current?.index === index
+      }
+
+      if (activeLocateHighlightRef.current?.requestId === pending.requestId) {
+        return true
       }
 
       const outlineItem = itemRefMap.current.get(index)
@@ -1036,18 +1059,20 @@ export const OutlineTab: React.FC<OutlineTabProps> = ({
       outlineItem.classList.add("highlight")
       const requestId = pending.requestId
       const timer = setTimeout(() => {
-        outlineItem.classList.remove("highlight")
+        removeOutlineItemClass("highlight")
+        if (activeLocateHighlightRef.current?.requestId === requestId) {
+          activeLocateHighlightRef.current = null
+        }
         if (pendingLocateHighlightRef.current?.requestId === requestId) {
           pendingLocateHighlightRef.current = null
         }
         manager.clearForceVisible()
-        locateHighlightRef.current = null
       }, OUTLINE_LOCATE_HIGHLIGHT_MS)
 
-      locateHighlightRef.current = { element: outlineItem, timer }
+      activeLocateHighlightRef.current = { index, requestId, timer }
       return true
     },
-    [manager],
+    [manager, removeOutlineItemClass],
   )
 
   const setItemRef = useCallback(
@@ -1062,23 +1087,30 @@ export const OutlineTab: React.FC<OutlineTabProps> = ({
         if (index === visibleHighlightRef.current) {
           applySingleSyncHighlight(index)
         }
-        applyPendingLocateHighlight(index)
+        if (activeLocateHighlightRef.current?.index === index) {
+          el.classList.add("highlight")
+        } else if (pendingLocateHighlightRef.current?.index === index) {
+          if (applyPendingLocateHighlight(index)) {
+            cancelLocateRetry()
+          }
+        }
       } else {
         map.delete(index)
       }
     },
-    [applyPendingLocateHighlight, applySingleSyncHighlight],
+    [applyPendingLocateHighlight, applySingleSyncHighlight, cancelLocateRetry],
   )
 
   const clearLocateHighlight = useCallback(
     (options?: { clearForceVisible?: boolean }) => {
       locateHighlightRequestIdRef.current += 1
       pendingLocateHighlightRef.current = null
+      cancelLocateRetry()
 
-      const current = locateHighlightRef.current
+      const current = activeLocateHighlightRef.current
       if (current) {
         clearTimeout(current.timer)
-        locateHighlightRef.current = null
+        activeLocateHighlightRef.current = null
       }
 
       removeOutlineItemClass("highlight")
@@ -1087,7 +1119,7 @@ export const OutlineTab: React.FC<OutlineTabProps> = ({
         manager.clearForceVisible()
       }
     },
-    [manager, removeOutlineItemClass],
+    [cancelLocateRetry, manager, removeOutlineItemClass],
   )
 
   const getVisibleHighlightIndex = useCallback((idx: number | null): number | null => {
@@ -1408,23 +1440,34 @@ export const OutlineTab: React.FC<OutlineTabProps> = ({
     syncOutlineScrollState(true)
   }, [syncOutlineScrollState, virtualMetrics.totalHeight])
 
-  // 用户手动滚动大纲面板时，暂停自动定位（修复 Firefox 滚轮事件传播导致的回弹）
+  // 用户手动滚动大纲面板时，暂停自动定位与跟随，并立即取消正在进行的定位重试，避免强制拉回造成抖动
   useEffect(() => {
     const el = listRef.current
     if (!el) return
-    const onWheel = () => {
+
+    const handleUserScroll = () => {
       userScrollingOutlineRef.current = true
+      cancelLocateRetry()
+      abortPendingLocate()
       if (userScrollTimerRef.current) clearTimeout(userScrollTimerRef.current)
       userScrollTimerRef.current = setTimeout(() => {
         userScrollingOutlineRef.current = false
       }, 1500)
     }
-    el.addEventListener("wheel", onWheel, { passive: true })
+
+    el.addEventListener("wheel", handleUserScroll, { passive: true })
+    el.addEventListener("pointerdown", handleUserScroll, { passive: true })
+    el.addEventListener("touchstart", handleUserScroll, { passive: true })
+    el.addEventListener("touchmove", handleUserScroll, { passive: true })
+
     return () => {
-      el.removeEventListener("wheel", onWheel)
+      el.removeEventListener("wheel", handleUserScroll)
+      el.removeEventListener("pointerdown", handleUserScroll)
+      el.removeEventListener("touchstart", handleUserScroll)
+      el.removeEventListener("touchmove", handleUserScroll)
       if (userScrollTimerRef.current) clearTimeout(userScrollTimerRef.current)
     }
-  }, [])
+  }, [abortPendingLocate, cancelLocateRetry])
 
   const handleToggle = useCallback(
     (node: OutlineNode) => {
@@ -1619,6 +1662,13 @@ export const OutlineTab: React.FC<OutlineTabProps> = ({
     const scrollContainer = manager.getScrollContainer()
     if (!scrollContainer) return
 
+    // 用户主动触发定位时解除手动滚动锁定，避免被 1.5s 抑制窗口静默拦截
+    userScrollingOutlineRef.current = false
+    if (userScrollTimerRef.current) {
+      clearTimeout(userScrollTimerRef.current)
+      userScrollTimerRef.current = null
+    }
+
     // 0. 如果在搜索模式，先清除搜索
     if (searchQuery) {
       manager.setSearchQuery("")
@@ -1695,38 +1745,69 @@ export const OutlineTab: React.FC<OutlineTabProps> = ({
     // 4. 虚拟列表需要先滚动到目标行，等待该行挂载后再加高亮
     const tryScrollAndHighlight = (attempt: number) => {
       if (locateHighlightRequestId !== locateHighlightRequestIdRef.current) return
+      if (userScrollingOutlineRef.current) {
+        cancelLocateRetry()
+        abortPendingLocate()
+        return
+      }
+
+      // 如果高亮已经成功激活，说明目标已定位并展示，无需再滚动或重试
+      if (activeLocateHighlightRef.current?.requestId === locateHighlightRequestId) {
+        cancelLocateRetry()
+        return
+      }
 
       scrollOutlineNodeIntoView(currentItem!.index, "center")
 
       requestAnimationFrame(() => {
         if (locateHighlightRequestId !== locateHighlightRequestIdRef.current) return
+        if (userScrollingOutlineRef.current) {
+          cancelLocateRetry()
+          abortPendingLocate()
+          return
+        }
 
-        if (applyPendingLocateHighlight(currentItem!.index)) return
+        if (applyPendingLocateHighlight(currentItem!.index)) {
+          cancelLocateRetry()
+          return
+        }
 
         if (attempt < OUTLINE_LOCATE_MAX_RETRIES) {
-          setTimeout(() => tryScrollAndHighlight(attempt + 1), OUTLINE_LOCATE_RETRY_DELAY_MS)
-        } else if (pendingLocateHighlightRef.current?.requestId === locateHighlightRequestId) {
-          pendingLocateHighlightRef.current = null
-          manager.clearForceVisible()
+          locateRetryTimerRef.current = setTimeout(
+            () => tryScrollAndHighlight(attempt + 1),
+            OUTLINE_LOCATE_RETRY_DELAY_MS,
+          )
+        } else {
+          cancelLocateRetry()
+          if (pendingLocateHighlightRef.current?.requestId === locateHighlightRequestId) {
+            pendingLocateHighlightRef.current = null
+            manager.clearForceVisible()
+          }
         }
       })
     }
 
-    setTimeout(() => tryScrollAndHighlight(0), OUTLINE_LOCATE_RETRY_DELAY_MS)
+    locateRetryTimerRef.current = setTimeout(
+      () => tryScrollAndHighlight(0),
+      OUTLINE_LOCATE_RETRY_DELAY_MS,
+    )
   }, [
     tree,
     searchQuery,
     manager,
+    abortPendingLocate,
     applyPendingLocateHighlight,
+    cancelLocateRetry,
     clearLocateHighlight,
     scrollOutlineNodeIntoView,
   ])
 
   useEffect(
     () => () => {
+      cancelLocateRetry()
       clearLocateHighlight({ clearForceVisible: true })
     },
-    [clearLocateHighlight],
+    [cancelLocateRetry, clearLocateHighlight],
   )
 
   const handleLevelClick = useCallback(
