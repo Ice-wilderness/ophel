@@ -8,6 +8,12 @@
 
 ## [Unreleased]
 
+---
+
+## [1.2.7] - 2026-09-13
+
+**⚠️ 公告 — 我们的 GitHub 账号暂时被误封禁，目前正在积极申诉。恢复之前，GitHub 仓库、问题反馈页面以及适配中心的在线适配库可能暂时无法访问。如遇到任何问题，请前往 [Discord](https://discord.gg/rmPzb6Cx9u) 反馈。**
+
 ### 🚀 新增功能
 
 - **站点开关** — 支持在适配中心、页面设置或扩展弹窗中单独停用任一内置站点或适配包，停用后不再加载面板与增强功能。(#908)
@@ -27,6 +33,7 @@
 
 ### 🐛 问题修复
 
+- **Gemini 侧边栏适配** — 适配 Gemini 新版侧边栏结构，对话管理和全局搜索中的 Gemini 对话列表恢复加载。
 - **提示词队列遮挡站点弹窗** — 修复队列悬浮胶囊和面板遮挡站点自身弹窗的问题，现在检测到站点弹窗打开时会自动隐藏，弹窗关闭后恢复显示。
 - **ChatGPT 页内收藏图标** — 修复页内收藏在长对话中反复触发展开提问文本，导致标签页内存持续上涨的问题。(#889)
 - **Kimi 国际站支持** — 现在识别 Kimi 国际站 kimi.ai，大纲、导出、禅模式等功能在 kimi.ai 与 kimi.com 上均可使用。(#890)
@@ -1508,6 +1515,7 @@
 
 ---
 
+[1.2.7]: https://github.com/urzeye/ophel/releases/tag/v1.2.7
 [1.2.6]: https://github.com/urzeye/ophel/releases/tag/v1.2.6
 [1.2.5]: https://github.com/urzeye/ophel/releases/tag/v1.2.5
 [1.2.4]: https://github.com/urzeye/ophel/releases/tag/v1.2.4

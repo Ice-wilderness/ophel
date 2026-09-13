@@ -9,6 +9,12 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [1.2.7] - 2026-09-13
+
+**⚠️ Notice — Our GitHub account has been temporarily suspended in error, and we are actively appealing. Until it is restored, GitHub links (repository, issue tracker) and the online adapter library in the Adapter Center may be unavailable. If you run into any problems, please let us know on [Discord](https://discord.gg/rmPzb6Cx9u).**
+
 ### 🚀 New Features
 
 - **Site toggle** — You can now individually disable any built-in site or site pack from the Adapter Center, on-page settings, or extension popup to stop Ophel from loading on that site. (#908)
@@ -28,6 +34,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### 🐛 Bug Fixes
 
+- **Gemini sidebar adaptation** — Adapted to Gemini's new sidebar structure, so the conversation list loads again in Conversation Manager and Global Search.
 - **Prompt Queue overlay covering site dialogs** — Fixed the floating queue capsule and panel covering sites' own dialogs and popups; the overlay now hides while a native dialog is open and reappears once it closes.
 - **ChatGPT in-page bookmark icons** — Fixed in-page bookmarks repeatedly expanding ChatGPT question text in long conversations, which could drive up tab memory usage. (#889)
 - **Kimi international site** — The extension now recognizes kimi.ai, so outline, export, Zen Mode, and other Kimi features work on both kimi.ai and kimi.com. (#890)
@@ -1509,6 +1516,7 @@ This is the first official release of Ophel, providing comprehensive enhancement
 
 ---
 
+[1.2.7]: https://github.com/urzeye/ophel/releases/tag/v1.2.7
 [1.2.6]: https://github.com/urzeye/ophel/releases/tag/v1.2.6
 [1.2.5]: https://github.com/urzeye/ophel/releases/tag/v1.2.5
 [1.2.4]: https://github.com/urzeye/ophel/releases/tag/v1.2.4
