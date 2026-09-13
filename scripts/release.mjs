@@ -330,9 +330,14 @@ function assertGitState(options) {
   }
 }
 
-function assertTagDoesNotExist(tagName) {
+function assertTagDoesNotExist(tagName, { dryRun = false } = {}) {
   const existing = git(["tag", "--list", tagName])
   if (existing) {
+    // dry-run 不改动任何状态，已存在的同名 tag 仅提示，不阻断预览
+    if (dryRun) {
+      console.log(`Dry run: tag ${tagName} already exists locally; a real run would stop here.`)
+      return
+    }
     fail(`Tag already exists locally: ${tagName}`)
   }
 }
@@ -548,6 +553,6 @@ if (options.command === "redo") {
     ? normalizeVersion(options.requestedVersion)
     : bumpPatch(packageJson.version)
 
-  assertTagDoesNotExist(`v${version}`)
+  assertTagDoesNotExist(`v${version}`, { dryRun: options.dryRun })
   await runRelease(version, options)
 }
