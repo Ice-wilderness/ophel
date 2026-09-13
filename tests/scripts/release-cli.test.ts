@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -29,11 +29,14 @@ describe("release CLI", () => {
   })
 
   it("skips quality checks on dry-run --skip-checks and does not create a tag", () => {
+    // 显式传当前版本号：发布后 [Unreleased] 为空的仓库状态下 dry-run 也必须可用
+    const packageVersion = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"))
+      .version as string
     const beforeTags = spawnSync("git", ["tag", "--list"], {
       cwd: repoRoot,
       encoding: "utf8",
     })
-    const result = runRelease(["--dry-run", "--skip-checks"])
+    const result = runRelease([packageVersion, "--dry-run", "--skip-checks"])
     const afterTags = spawnSync("git", ["tag", "--list"], {
       cwd: repoRoot,
       encoding: "utf8",
