@@ -1478,7 +1478,7 @@ export class GeminiAdapter extends SiteAdapter {
     const prefix = this.getUserPathPrefix()
     return Array.from(items)
       .map((el) => {
-        // 新版侧边栏：jslog 在内部 <a> 上，标题在 .title-text 中
+        // 侧边栏结构：id 取自内部 <a> 的 href（jslog 已 base64 编码），标题在 .title-text 中
         const anchor = el.querySelector(sitePrivateSelectors.conversationAnchor)
         const idAttribute = conversation.idFrom.attr ?? "href"
         const idSignal = anchor?.getAttribute(idAttribute) || el.getAttribute(idAttribute) || ""

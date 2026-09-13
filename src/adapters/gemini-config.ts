@@ -170,7 +170,7 @@ export interface GeminiSiteConfig extends BuiltinSiteConfig {
 }
 
 /** 内置修复修改默认配置时必须递增，使旧缓存 patch 自动失效。 */
-export const GEMINI_CONFIG_VERSION = 4
+export const GEMINI_CONFIG_VERSION = 5
 
 const createGeminiConfig = (): GeminiSiteConfig => {
   const userQuery = "user-query"
@@ -288,7 +288,8 @@ const createGeminiConfig = (): GeminiSiteConfig => {
     input: { mode: "contenteditable", submitKey: "Enter" },
     conversation: {
       itemSelector: conversationItem,
-      idFrom: { attr: "jslog", regex: '\\["c_([^"]+)"' },
+      // 侧边栏 jslog 中的会话 id 已改为 base64 编码，稳定来源是内部 <a> 的 href（/app/<id>）
+      idFrom: { attr: "href", regex: "/app/([a-f0-9]+)" },
       titleSelector: conversationTitle,
       urlTemplate: "/app/{id}",
       activeMatch: "a.mdc-list-item--activated",
@@ -427,7 +428,9 @@ const createGeminiConfig = (): GeminiSiteConfig => {
       chatsExpandableSectionFallback: 'expandable-section[storagekey="chats"]',
       chatsExpandableSectionHost: "expandable-section",
       conversationList,
-      historyLoadingSpinner: '[data-test-id="loading-history-spinner"]',
+      // 加载中 spinner 的 test-id 已由 loading-history-spinner 更名为 loading-content-spinner
+      historyLoadingSpinner:
+        '[data-test-id="loading-content-spinner"], [data-test-id="loading-history-spinner"]',
       conversationAnchor: "a",
       conversationPinnedIcon: 'mat-icon[fonticon="push_pin"]',
       conversationActiveTitle: `a.mdc-list-item--activated ${conversationTitle}`,

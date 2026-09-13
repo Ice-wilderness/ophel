@@ -15,7 +15,22 @@ vi.mock("~utils/i18n", () => ({
 
 describe("Gemini built-in config and DOM adaptation", () => {
   it("increments GEMINI_CONFIG_VERSION to invalidate obsolete patches", () => {
-    expect(GEMINI_CONFIG_VERSION).toBe(4)
+    expect(GEMINI_CONFIG_VERSION).toBe(5)
+  })
+
+  it("extracts conversation id from anchor href after sidebar jslog became base64-encoded", () => {
+    const { idFrom } = GEMINI_CONFIG.conversation
+    expect(idFrom.attr).toBe("href")
+
+    // 取自新版侧边栏真实结构：<a href="/app/<id>">
+    const href = "/app/f7e219afc0080de3"
+    expect(href.match(new RegExp(idFrom.regex))?.[1]).toBe("f7e219afc0080de3")
+  })
+
+  it("matches the renamed conversation history loading spinner", () => {
+    const selector = GEMINI_CONFIG.sitePrivateSelectors.historyLoadingSpinner
+    expect(selector).toContain('[data-test-id="loading-content-spinner"]')
+    expect(selector).toContain('[data-test-id="loading-history-spinner"]')
   })
 
   it("adapts messageWidth and turnSelector to conversation-container web component", () => {
