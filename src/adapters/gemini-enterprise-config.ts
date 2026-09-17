@@ -80,7 +80,7 @@ export interface GeminiEnterpriseSiteConfig extends BuiltinSiteConfig {
 }
 
 /** 内置修复修改默认配置时必须递增，使旧缓存 patch 自动失效。 */
-export const GEMINI_ENTERPRISE_CONFIG_VERSION = 1
+export const GEMINI_ENTERPRISE_CONFIG_VERSION = 2
 
 const createGeminiEnterpriseConfig = (): GeminiEnterpriseSiteConfig => {
   const conversationItem = ".conversation"
@@ -197,7 +197,7 @@ const createGeminiEnterpriseConfig = (): GeminiEnterpriseSiteConfig => {
       createWidthSelector(inputArea, undefined, "left: 0 !important; right: 0 !important;", true),
     ],
     zenMode: { hide: ["ucs-nav-panel"] },
-    cleanMode: { hide: [".disclaimer"] },
+    cleanMode: { preserveFlow: [".disclaimer"] },
     mermaidSupport: "fallback",
     quickQuote: "enabled",
     supportsHostThemeSync: true,
