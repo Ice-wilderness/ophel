@@ -9,6 +9,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### 🚀 New Features
+
+- **Doubao page theme sync** — Doubao now supports bidirectional theme synchronization with Ophel and native page theme switches across light, dark, and system appearance preferences, keeping the page, input box, and panel in full sync. (#932)
+
 ### ✨ Improvements
 
 - **Clean Mode bottom spacing** — In Clean Mode, AI generation and legal disclaimers under the input box are now hidden while preserving their native DOM flow spacing, keeping the input area at the site's original intended height instead of sticking to the bottom edge. (#929)
