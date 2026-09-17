@@ -6,6 +6,7 @@ import {
   type ExportConfig,
   type ModelSwitcherConfig,
   type NetworkMonitorConfig,
+  type AutoHideInputConfig,
   type OutlineItem,
   type OutlineSource,
   type PanelAvoidanceConfig,
@@ -1087,6 +1088,16 @@ export class DeclarativeAdapter extends SiteAdapter {
 
   getCleanModeConfig(): ZenModeConfig | null {
     return this.manifest.cleanMode ? cloneZenModeConfig(this.manifest.cleanMode) : null
+  }
+
+  getAutoHideInputConfig(): AutoHideInputConfig | null {
+    const config = this.manifest.autoHideInput
+    if (!config) return null
+    // 顶层字段直接展开，新增标量配置项时无需同步此处；styles 需要逐条拷贝
+    return {
+      ...config,
+      ...(config.styles ? { styles: config.styles.map((style) => ({ ...style })) } : {}),
+    }
   }
 
   getSubmitKeyConfig(): { key: "Enter" | "Ctrl+Enter" } {

@@ -166,6 +166,30 @@ export interface ZenModeConfig {
   styles?: ZenModeStyleRule[]
 }
 
+/** 输入框自动隐藏的声明式配置；站点差异全部收敛到此结构，机制由 LayoutManager 统一实现。 */
+export interface AutoHideInputConfig {
+  /** 输入区域整体容器选择器；应自带"活跃输入"判定（如 Gemini 排除新对话页的零态居中输入） */
+  container: string
+  /**
+   * 滚动容器选择器（可逗号列表），用于以 ::after 伪元素在滚动末尾占位。
+   * 伪元素不是 DOM 节点：不进站点的 children/ reconcile 范围、不触发 MutationObserver，
+   * 对虚拟滚动列表安全。缺省表示该站点不需要占位（功能不受影响）。
+   */
+  scrollContainer?: string
+  /** 滚动容器内占位 spacer 高度 px，缺省 33 */
+  spacerHeight?: number
+  /** 指针距视口底部 <= 该值时显示输入框，缺省 210 */
+  revealDistancePx?: number
+  /** 指针距视口底部 >= 该值时隐藏输入框，须大于 revealDistancePx 形成迟滞，缺省 revealDistancePx + 180 */
+  hideDistancePx?: number
+  /** 隐藏态在容器自身高度之外额外下移的偏移 px，缺省 28 */
+  hiddenOffsetPx?: number
+  /** 浮层 z-index，缺省 30 */
+  zIndex?: number
+  /** 站点附加样式规则（如释放会话容器 min-height、关闭底部渐变遮罩） */
+  styles?: ZenModeStyleRule[]
+}
+
 export interface WidthSelectorConfig {
   selector: string
   property: string
@@ -782,6 +806,11 @@ export abstract class SiteAdapter {
     return null
   }
 
+  /** 返回输入框自动隐藏配置；默认 null = 不支持，由站点验证后逐步 opt-in。 */
+  getAutoHideInputConfig(): AutoHideInputConfig | null {
+    return null
+  }
+
   /** 获取 Markdown 修复器配置（子类可覆盖） */
   getMarkdownFixerConfig(): MarkdownFixerConfig | null {
     return null
@@ -875,6 +904,20 @@ export abstract class SiteAdapter {
     }
     // 否则重新查找
     return this.findTextarea()
+  }
+
+  /**
+   * 页面编辑器是否已有草稿（明确的输入意图，驱动自动隐藏输入框立即唤出）。
+   * 默认按编辑器文本非空判定；编辑器有预填内容或占位文本残留的站点应覆写本方法，
+   * 否则会永不隐藏。
+   */
+  hasInputDraft(): boolean {
+    const editor = this.getTextareaElement()
+    if (!editor) return false
+    if (editor instanceof HTMLTextAreaElement || editor instanceof HTMLInputElement) {
+      return editor.value.trim().length > 0
+    }
+    return (editor.textContent || "").trim().length > 0
   }
 
   // ==================== 滚动控制 ====================

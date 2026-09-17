@@ -66,6 +66,7 @@ import {
 import { WatermarkRemover } from "~core/watermark-remover"
 import {
   SiteAdapter,
+  type AutoHideInputConfig,
   type ConversationDeleteTarget,
   type ConversationInfo,
   type ConversationObserverConfig,
@@ -2575,6 +2576,15 @@ export class GeminiAdapter extends SiteAdapter {
 
   getCleanModeConfig() {
     return this.cloneZenModeConfig(this.config.cleanMode)
+  }
+
+  getAutoHideInputConfig(): AutoHideInputConfig | null {
+    const config = this.config.autoHideInput
+    // 顶层字段直接展开，新增标量配置项时无需同步此处；styles 需要逐条拷贝
+    return {
+      ...config,
+      ...(config.styles ? { styles: config.styles.map((style) => ({ ...style })) } : {}),
+    }
   }
 
   private cloneZenModeConfig(config: ZenModeConfig): ZenModeConfig {

@@ -11,6 +11,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### 🚀 New Features
 
+- **Auto-hide input (Gemini)** — Added an "Auto-hide Input" toggle under Site Settings for Gemini. The chat input box floats as an overlay and slides away when idle, letting conversations use the freed space; it reappears when the pointer approaches the bottom, on prompt insertion, or via the focus shortcut (`Alt + I`). (#930)
 - **Doubao page theme sync** — Doubao now supports bidirectional theme synchronization with Ophel and native page theme switches across light, dark, and system appearance preferences, keeping the page, input box, and panel in full sync. (#932)
 
 ### ✨ Improvements
@@ -23,7 +24,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [1.2.7] - 2026-09-13
+## [1.2.7][1.2.7] - 2026-09-13
 
 **⚠️ Notice — Our GitHub account has been temporarily suspended in error, and we are actively appealing. Until it is restored, GitHub links (repository, issue tracker) and the online adapter library in the Adapter Center may be unavailable. If you run into any problems, please let us know on [Discord](https://discord.gg/rmPzb6Cx9u).**
 
@@ -58,7 +59,7 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [1.2.6] - 2026-08-28
+## [1.2.6][1.2.6] - 2026-08-28
 
 ### 🚀 New Features
 

@@ -112,6 +112,7 @@ const CONFIG_KEYS = [
   "export",
   "zenMode",
   "cleanMode",
+  "autoHideInput",
   "widthSelectors",
   "panelAvoidance",
   "documentOutline",
@@ -1424,6 +1425,86 @@ const validateZenMode = (
   }
 }
 
+const validateAutoHideInput = (
+  value: unknown,
+  path: string,
+  context: ValidationContext,
+  mode: ValidationMode,
+): void => {
+  const autoHideInput = validateObject(
+    value,
+    path,
+    context,
+    [
+      "container",
+      "scrollContainer",
+      "spacerHeight",
+      "revealDistancePx",
+      "hideDistancePx",
+      "hiddenOffsetPx",
+      "zIndex",
+      "styles",
+    ],
+    ["container"],
+    mode,
+  )
+  if (!autoHideInput) return
+  if (autoHideInput.container !== undefined) {
+    validateSelectorString(autoHideInput.container, `${path}.container`, context, mode)
+  }
+  if (autoHideInput.scrollContainer !== undefined) {
+    validateSelectorString(autoHideInput.scrollContainer, `${path}.scrollContainer`, context, mode)
+  }
+  if (autoHideInput.spacerHeight !== undefined) {
+    validateFiniteNumber(autoHideInput.spacerHeight, `${path}.spacerHeight`, context, mode, {
+      integer: true,
+      min: 0,
+    })
+  }
+  const numericFields = ["revealDistancePx", "hideDistancePx", "hiddenOffsetPx", "zIndex"] as const
+  for (const field of numericFields) {
+    if (autoHideInput[field] !== undefined) {
+      validateFiniteNumber(autoHideInput[field], `${path}.${field}`, context, mode, {
+        integer: true,
+        min: 0,
+      })
+    }
+  }
+  // 迟滞带是防抖动的硬前提：隐藏阈值必须大于显示阈值
+  const revealDistance = autoHideInput.revealDistancePx
+  const hideDistance = autoHideInput.hideDistancePx
+  if (
+    typeof revealDistance === "number" &&
+    typeof hideDistance === "number" &&
+    hideDistance <= revealDistance
+  ) {
+    addError(
+      context,
+      `${path}.hideDistancePx`,
+      "invalid_value",
+      "hideDistancePx must be greater than revealDistancePx to keep the hysteresis band",
+    )
+  }
+  if (autoHideInput.styles !== undefined) {
+    if (isDeletion(autoHideInput.styles, mode)) return
+    if (!Array.isArray(autoHideInput.styles)) {
+      addError(context, `${path}.styles`, "invalid_type", "Expected an array")
+      return
+    }
+    if (autoHideInput.styles.length > SITE_PACK_MAX_ARRAY_ITEMS) {
+      addError(
+        context,
+        `${path}.styles`,
+        "too_large",
+        `Array must not contain more than ${SITE_PACK_MAX_ARRAY_ITEMS} items`,
+      )
+    }
+    autoHideInput.styles.forEach((style, index) =>
+      validateZenStyle(style, `${path}.styles[${index}]`, context, "full"),
+    )
+  }
+}
+
 const validateWidthSelector = (
   value: unknown,
   path: string,
@@ -1814,6 +1895,9 @@ const validateConfigFields = (
     validateZenMode(config.zenMode, `${path}.zenMode`, context, mode)
   if (config.cleanMode !== undefined) {
     validateZenMode(config.cleanMode, `${path}.cleanMode`, context, mode)
+  }
+  if (config.autoHideInput !== undefined) {
+    validateAutoHideInput(config.autoHideInput, `${path}.autoHideInput`, context, mode)
   }
   if (config.widthSelectors !== undefined) {
     validateWidthSelectors(config.widthSelectors, `${path}.widthSelectors`, context, mode)
