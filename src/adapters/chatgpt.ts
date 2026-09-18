@@ -13,6 +13,10 @@ import {
   type ExportAssetCollector,
 } from "~utils/export-assets"
 import { htmlToMarkdown, type ExportBundle } from "~utils/exporter"
+import {
+  createOutlineGroupIndexResolver,
+  reconcileObservedTurnOrder,
+} from "~utils/outline-turn-order"
 import { hashTextForCache } from "~utils/text-hash"
 
 import {
@@ -146,6 +150,9 @@ const CHATGPT_EXPORT_ASSISTANT_SELECTOR = `[${CHATGPT_EXPORT_ROOT_ATTR}="1"] [${
 const CHATGPT_NATIVE_TOC_ID_PREFIX = "chatgpt-native-user-query::"
 const CHATGPT_NATIVE_TOC_ID_RE = /^chatgpt-native-user-query::(\d+)::/
 const CHATGPT_NATIVE_TOC_PROMPT_LABEL_RE = /^Prompt\s+\d+$/i
+// 合成悬停读取失败后的重试冷却：签名改为内容坐标后不再随按钮重建而重置，
+// 首次读取失败（如页面加载早期文本层未渲染）需要周期性重试来恢复
+const CHATGPT_NATIVE_TOC_REVEAL_RETRY_COOLDOWN_MS = 5000
 // 新版结构：离屏 turn 只剩外层占位 div[data-turn-id-container]，挂载后内层才出现
 // section[data-turn][data-testid=conversation-turn-N]。提取内容前要先解析到内层。
 const CHATGPT_EXPORT_MOUNTED_TURN_SELECTOR =
@@ -169,17 +176,10 @@ interface ChatGPTOutlineCacheEntry {
   level: number
   text: string
   turnId: string | null
-  /** turn 在本次对话内首次出现的全局序号（单调递增） */
-  firstSeenTurnIndex: number
   orderInTurn: number
   isUserQuery?: boolean
   isTruncated?: boolean
   wordCount?: number
-}
-
-interface ChatGPTTurnAnchor {
-  element: Element
-  index: number
 }
 
 interface ChatGPTNativeTocEntry {
@@ -188,11 +188,6 @@ interface ChatGPTNativeTocEntry {
   button: HTMLElement
   element: Element | null
   isActive: boolean
-}
-
-interface ChatGPTOutlineSortEntry {
-  item: OutlineItem
-  order: number
 }
 
 interface ChatGPTOutlineWordCountCacheEntry {
@@ -214,18 +209,28 @@ export class ChatGPTAdapter extends SiteAdapter {
   private lastKnownModelSlugObservedAt = 0
   private outlineCacheSessionKey = ""
   private outlineItemCache = new Map<string, ChatGPTOutlineCacheEntry>()
-  // turn 首次出现的 DOM 顺序，用于 turn-shell 被完全卸载后仍能维持稳定排序
-  private outlineTurnFirstSeenIndex = new Map<string, number>()
-  private outlineTurnFirstSeenCounter = 0
+  // 全局 turn 顺序表：按真实 DOM 顺序归并所有观测过的 turn，
+  // 即使 turn-shell 被虚拟滚动完全卸载，仍能依靠它维持稳定排序
+  private outlineTurnOrder: string[] = []
+  // turnId → conversation-turn-N（ChatGPT DOM 自带的全局 1-based 单调序号，
+  // 与滚动状态无关，是跨虚拟滚动最精确的排序坐标）
+  private outlineTurnNumbers = new Map<string, number>()
+  // N → turnId 反向索引：重新生成/分支编辑的 N 冲突检测用，避免每次记录都
+  // 全表扫描 outlineTurnNumbers（长对话每次 extract 会对所有锚点调用）
+  private outlineTurnNumberOwners = new Map<number, string>()
+  // turnId → 原生 TOC 的全局提问序号；TOC 存在时作为大纲排序的 canonical 坐标
+  private outlineTurnTocIndex = new Map<string, number>()
   // SPA 切换对话后的过渡期截止时刻：在此之前 extractOutline 不写 cache 也不
   // merge cache，避免把上一个对话残留的 DOM 内容污染到新对话的 cache 里。
   private outlineCacheTransitionEndAt = 0
+  // 切换瞬间记录的旧对话挂载 turnId 集合：DOM 完成替换后（完全不重合）可提前
+  // 结束过渡期，不必等满固定时长
+  private outlineCacheTransitionFromTurnIds = new Set<string>()
   private nativeTocTextCache: string[] = []
-  private nativeTocButtonElementSignatureCache = ""
+  private nativeTocCachedButtonSignature = ""
   private nativeTocRevealAttemptedSignature = ""
+  private nativeTocRevealAttemptedAt = 0
   private nativeTocRefreshScheduled = false
-  private nativeTocButtonElementIds = new WeakMap<HTMLElement, number>()
-  private nativeTocButtonElementIdCounter = 0
   private outlineWordCountCache = new WeakMap<Element, ChatGPTOutlineWordCountCacheEntry>()
 
   // 导出快照（参考 deepseek / aistudio 方案）：避免虚拟滚动导致漏抓或重复抓取
@@ -1936,13 +1941,18 @@ export class ChatGPTAdapter extends SiteAdapter {
     const turnId =
       turn.getAttribute("data-turn-id") || turn.getAttribute("data-turn-id-container") || null
 
-    if (turnId && !this.outlineTurnFirstSeenIndex.has(turnId)) {
-      this.outlineTurnFirstSeenIndex.set(turnId, this.outlineTurnFirstSeenCounter++)
+    // 导出采集按文档顺序逐 turn 滚动挂载，用当前所有已挂载 turn 的 DOM 顺序归并，
+    // 保证中途新发现的 turn 插入到正确位置而不是追加到尾部
+    const container = turn.closest(this.getResponseContainerSelector())
+    if (container) {
+      this.syncOutlineTurnOrder(this.getOrderedChatGPTTurnAnchors(container))
+    } else if (turnId) {
+      const turnNumber = this.getChatGPTTurnNumber(turn)
+      if (turnNumber !== null) this.recordOutlineTurnNumber(turnId, turnNumber)
+      reconcileObservedTurnOrder(this.outlineTurnOrder, [turnId], (id) =>
+        this.outlineTurnNumbers.get(id),
+      )
     }
-    const firstSeenTurnIndex =
-      turnId && this.outlineTurnFirstSeenIndex.has(turnId)
-        ? (this.outlineTurnFirstSeenIndex.get(turnId) as number)
-        : Number.MAX_SAFE_INTEGER
 
     // user query：用 data-message-id 作为缓存 key，与 extractOutline 同结构
     const userMessages = Array.from(turn.querySelectorAll(this.config.selectors.userQuery)).filter(
@@ -1967,7 +1977,6 @@ export class ChatGPTAdapter extends SiteAdapter {
         level: 0,
         text,
         turnId,
-        firstSeenTurnIndex,
         orderInTurn: 0,
         isUserQuery: true,
         isTruncated,
@@ -2004,7 +2013,6 @@ export class ChatGPTAdapter extends SiteAdapter {
           level: parseInt(tagName.charAt(1), 10),
           text,
           turnId,
-          firstSeenTurnIndex,
           orderInTurn: orderInTurn++,
           isUserQuery: false,
         })
@@ -2479,9 +2487,9 @@ export class ChatGPTAdapter extends SiteAdapter {
    * 由 collect 层的 first-seen 计数器兜底。
    */
   private getExportTurnSortIndex(turn: HTMLElement): number {
-    const testid = turn.getAttribute("data-testid") || ""
-    const match = /^conversation-turn-(\d+)/.exec(testid)
-    return match ? parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER
+    return (
+      this.parseConversationTurnNumber(turn.getAttribute("data-testid")) ?? Number.MAX_SAFE_INTEGER
+    )
   }
 
   private normalizeExportMessageContent(content: string): string {
@@ -2618,32 +2626,25 @@ export class ChatGPTAdapter extends SiteAdapter {
     )
   }
 
-  private getNativeTocButtonElementSignature(buttons: HTMLElement[]): string {
+  // 签名用按钮的内容坐标（data-toc-item-index 序列）而非元素身份：ChatGPT 重渲染
+  // TOC 栏会重建按钮元素，元素身份签名会让文本缓存随之失效；同一会话内索引序列
+  // 不变即可继续复用已读到的文本
+  private getNativeTocButtonSignature(buttons: HTMLElement[]): string {
     return buttons
-      .map((button) => {
-        let id = this.nativeTocButtonElementIds.get(button)
-        if (id === undefined) {
-          id = this.nativeTocButtonElementIdCounter
-          this.nativeTocButtonElementIdCounter += 1
-          this.nativeTocButtonElementIds.set(button, id)
-        }
-        return id
-      })
+      .map((button, fallbackIndex) => this.getNativeTocButtonIndex(button, fallbackIndex))
       .join("|")
   }
 
   private cacheNativeTocTexts(buttons: HTMLElement[], texts: string[]): void {
     this.nativeTocTextCache = texts
-    this.nativeTocButtonElementSignatureCache = this.getNativeTocButtonElementSignature(buttons)
+    this.nativeTocCachedButtonSignature = this.getNativeTocButtonSignature(buttons)
   }
 
   private hasUsableNativeTocTextCache(buttons: HTMLElement[]): boolean {
     if (this.nativeTocTextCache.length !== buttons.length) return false
 
-    const buttonSignature = this.getNativeTocButtonElementSignature(buttons)
-    return (
-      buttonSignature.length > 0 && buttonSignature === this.nativeTocButtonElementSignatureCache
-    )
+    const buttonSignature = this.getNativeTocButtonSignature(buttons)
+    return buttonSignature.length > 0 && buttonSignature === this.nativeTocCachedButtonSignature
   }
 
   private getElementWindow(element: Element): Window & typeof globalThis {
@@ -2745,7 +2746,7 @@ export class ChatGPTAdapter extends SiteAdapter {
     if (this.nativeTocRefreshScheduled) return
 
     const scheduledSessionKey = this.outlineCacheSessionKey
-    const scheduledButtonSignature = this.getNativeTocButtonElementSignature(buttons)
+    const scheduledButtonSignature = this.getNativeTocButtonSignature(buttons)
     this.nativeTocRefreshScheduled = true
     window.setTimeout(() => {
       try {
@@ -2757,10 +2758,16 @@ export class ChatGPTAdapter extends SiteAdapter {
         }
 
         const latestButtons = this.getNativeTocButtons()
-        const latestButtonSignature = this.getNativeTocButtonElementSignature(latestButtons)
+        const latestButtonSignature = this.getNativeTocButtonSignature(latestButtons)
         if (latestButtonSignature !== scheduledButtonSignature) return
 
-        const texts = this.readNativeTocButtonLabels(latestButtons)
+        // 合成悬停打开的文本层此刻仍开着（conceal 在 finally 中执行），
+        // aria-label 与文本层都尝试读，避免只占位符标签可读时恢复失败
+        const labelTexts = this.readNativeTocButtonLabels(latestButtons)
+        const texts =
+          labelTexts.length === latestButtons.length
+            ? labelTexts
+            : this.readNativeTocTitleTexts(latestButtons)
         if (texts.length === latestButtons.length && texts.length > 0) {
           this.cacheNativeTocTexts(latestButtons, texts)
           window.dispatchEvent(new CustomEvent("ophel:refreshOutline"))
@@ -2779,12 +2786,14 @@ export class ChatGPTAdapter extends SiteAdapter {
       return labels
     }
 
-    const buttonSignature = this.getNativeTocButtonElementSignature(buttons)
+    const buttonSignature = this.getNativeTocButtonSignature(buttons)
     if (
       !this.hasUsableNativeTocTextCache(buttons) &&
-      this.nativeTocRevealAttemptedSignature !== buttonSignature
+      (this.nativeTocRevealAttemptedSignature !== buttonSignature ||
+        Date.now() - this.nativeTocRevealAttemptedAt >= CHATGPT_NATIVE_TOC_REVEAL_RETRY_COOLDOWN_MS)
     ) {
       this.nativeTocRevealAttemptedSignature = buttonSignature
+      this.nativeTocRevealAttemptedAt = Date.now()
       this.revealNativeTocTextLayer(buttons)
 
       const revealedLabels = this.readNativeTocButtonLabels(buttons)
@@ -2797,6 +2806,21 @@ export class ChatGPTAdapter extends SiteAdapter {
       this.scheduleNativeTocRefresh(buttons)
     }
 
+    const texts = this.readNativeTocTitleTexts(buttons)
+    if (texts.length === buttons.length) {
+      this.cacheNativeTocTexts(buttons, texts)
+      return texts
+    }
+
+    if (this.hasUsableNativeTocTextCache(buttons)) {
+      return this.nativeTocTextCache
+    }
+
+    return texts
+  }
+
+  /** 读取悬停文本层里的提问标题（文本层只在悬停时渲染，读不到时返回部分或空数组） */
+  private readNativeTocTitleTexts(buttons: HTMLElement[]): string[] {
     const firstButton = buttons[0]
     const privateSelectors = this.config.sitePrivateSelectors
     const scope =
@@ -2814,22 +2838,11 @@ export class ChatGPTAdapter extends SiteAdapter {
       return element instanceof HTMLElement
     })
 
-    const texts = uniqueTitleElements
+    return uniqueTitleElements
       .map((element) =>
         this.normalizeNativeTocText(element.getAttribute("title") || element.textContent || ""),
       )
       .filter((text) => text.length > 0)
-
-    if (texts.length === buttons.length) {
-      this.cacheNativeTocTexts(buttons, texts)
-      return texts
-    }
-
-    if (this.hasUsableNativeTocTextCache(buttons)) {
-      return this.nativeTocTextCache
-    }
-
-    return texts
   }
 
   private getNativeTocEntries(): ChatGPTNativeTocEntry[] {
@@ -2964,16 +2977,44 @@ export class ChatGPTAdapter extends SiteAdapter {
     timeoutMs = 1600,
   ): Promise<Element | null> {
     const deadline = Date.now() + timeoutMs
+    let lastScrollTop: number | null = null
     while (Date.now() < deadline) {
       await this.sleep(80)
-      const candidate = this.findNativeTocUserQueryCandidate(
+      const activeIndexMatched = this.getActiveNativeTocIndex() === entry.index
+      // 快路径：DOM 文本与 TOC 标签能匹配（未截断的短提问）时直接命中
+      const textMatched = this.findNativeTocUserQueryCandidate(
         text || entry.text,
-        this.getActiveNativeTocIndex() === entry.index,
+        activeIndexMatched,
       )
-      if (candidate) return candidate
+      if (textMatched) return textMatched
+
+      // 原生 TOC 标签可能被截断或带省略号，文本匹配会系统性失效。此时以站点
+      // 导航状态为准：激活项已切到被点击条目且滚动停止后，视口中心附近的问题
+      // 就是跳转目标，不再要求文本一致
+      const scrollTop = this.getNativeTocScrollTop()
+      if (activeIndexMatched && scrollTop !== null && scrollTop === lastScrollTop) {
+        const settled = this.findVisibleUserQueryNearViewportCenter()
+        if (settled) return settled
+      }
+      lastScrollTop = scrollTop
     }
 
     return null
+  }
+
+  private getNativeTocScrollTop(): number | null {
+    const container =
+      this.getScrollContainer() || document.querySelector(this.getResponseContainerSelector())
+    return container instanceof HTMLElement ? container.scrollTop : null
+  }
+
+  private findVisibleUserQueryNearViewportCenter(): Element | null {
+    const container =
+      this.getScrollContainer() || document.querySelector(this.getResponseContainerSelector())
+    const candidates = Array.from(document.querySelectorAll(this.getUserQuerySelector())).filter(
+      (element) => this.isVisible(element) && this.isElementInViewport(element, container),
+    )
+    return this.getClosestVisibleElementToViewportCenter(candidates, container)
   }
 
   private findNativeTocUserQueryCandidate(
@@ -3033,22 +3074,6 @@ export class ChatGPTAdapter extends SiteAdapter {
     )
   }
 
-  private getElementRenderOrder(element: Element, container: Element): number {
-    const target = (
-      this.getChatGPTTurnId(element)
-        ? element.closest("[data-turn-id], [data-turn-id-container]") || element
-        : element
-    ) as HTMLElement
-    const targetRect = target.getBoundingClientRect()
-
-    if (container instanceof HTMLElement) {
-      const containerRect = container.getBoundingClientRect()
-      return container.scrollTop + (targetRect.top - containerRect.top)
-    }
-
-    return window.scrollY + targetRect.top
-  }
-
   private getOutlineCacheSessionKey(): string {
     const cid = this.getCurrentCid() || "default"
     const sessionId = this.getSessionId() || "default"
@@ -3062,14 +3087,15 @@ export class ChatGPTAdapter extends SiteAdapter {
     const isFirstSession = this.outlineCacheSessionKey === ""
     this.outlineCacheSessionKey = sessionKey
     this.outlineItemCache.clear()
-    this.outlineTurnFirstSeenIndex.clear()
-    this.outlineTurnFirstSeenCounter = 0
+    this.outlineTurnOrder = []
+    this.outlineTurnNumbers.clear()
+    this.outlineTurnNumberOwners.clear()
+    this.outlineTurnTocIndex.clear()
     this.nativeTocTextCache = []
-    this.nativeTocButtonElementSignatureCache = ""
+    this.nativeTocCachedButtonSignature = ""
     this.nativeTocRevealAttemptedSignature = ""
+    this.nativeTocRevealAttemptedAt = 0
     this.nativeTocRefreshScheduled = false
-    this.nativeTocButtonElementIds = new WeakMap()
-    this.nativeTocButtonElementIdCounter = 0
     // SPA 切换对话时（不是首次初始化）进入过渡期：ChatGPT 的 URL 同步切换、但
     // DOM 替换是异步的；此时 extractOutline 抓到的仍是上一个对话的残留节点，
     // 若立刻当成"新对话 cache"写进去，等 DOM 完成切换、新对话内容到位时再做
@@ -3077,6 +3103,18 @@ export class ChatGPTAdapter extends SiteAdapter {
     // 过渡期内 extractOutline 跳过 cache 写入与合并，只返回 DOM 实时内容；
     // 等过了过渡期再恢复正常的"虚拟滚动兜底"行为。
     this.outlineCacheTransitionEndAt = isFirstSession ? 0 : Date.now() + 2000
+    // 记录切换瞬间仍挂载的旧对话 turnId：固定时长对慢加载不够、对快切换又
+    // 白白降级 2 秒。过渡期内在 extractOutline 里对比当前挂载 turn，完全不
+    // 重合即视为 DOM 已替换完成，可提前结束过渡期。
+    this.outlineCacheTransitionFromTurnIds = new Set()
+    if (!isFirstSession) {
+      const container = this.getOutlineExtractionContainer()
+      if (container) {
+        this.getOrderedChatGPTTurnAnchors(container).forEach((_element, turnId) => {
+          this.outlineCacheTransitionFromTurnIds.add(turnId)
+        })
+      }
+    }
   }
 
   private isInOutlineCacheTransition(): boolean {
@@ -3105,17 +3143,17 @@ export class ChatGPTAdapter extends SiteAdapter {
     )
   }
 
-  private getOrderedChatGPTTurnAnchors(container: Element): Map<string, ChatGPTTurnAnchor> {
-    const anchors = new Map<string, ChatGPTTurnAnchor>()
-    let index = 0
+  private getOrderedChatGPTTurnAnchors(container: Element): Map<string, Element> {
+    const anchors = new Map<string, Element>()
 
     const addAnchor = (element: Element): void => {
       const turnId =
         element.getAttribute("data-turn-id-container") || element.getAttribute("data-turn-id")
-      if (!turnId || anchors.has(turnId)) return
+      // client-created-root 是输入草稿的占位容器，不是真实对话 turn，
+      // 收进锚点表会污染全局顺序表
+      if (!turnId || turnId === "client-created-root" || anchors.has(turnId)) return
 
-      anchors.set(turnId, { element, index })
-      index += 1
+      anchors.set(turnId, element)
     }
 
     container.querySelectorAll("[data-turn-id-container], [data-turn-id]").forEach(addAnchor)
@@ -3124,60 +3162,93 @@ export class ChatGPTAdapter extends SiteAdapter {
   }
 
   /**
-   * 记录每个出现过的 turn 的 first-seen DOM 顺序。
-   * 即使后续 turn-shell 也被虚拟滚动卸载，仍能依靠这个稳定序号排序。
+   * 用当前已挂载 turn 的真实 DOM 顺序归并全局顺序表。
+   * 即使后续 turn-shell 被虚拟滚动卸载，仍能依靠这个全局表排序。
    */
-  private recordTurnDocumentOrders(turnAnchors: Map<string, ChatGPTTurnAnchor>): void {
-    if (turnAnchors.size === 0) return
-
-    // 收集本次还未记录的 turn 并按当前 DOM 顺序入册
-    const newTurns: string[] = []
-    turnAnchors.forEach((_anchor, turnId) => {
-      if (!this.outlineTurnFirstSeenIndex.has(turnId)) {
-        newTurns.push(turnId)
-      }
+  private syncOutlineTurnOrder(turnAnchors: Map<string, Element>): void {
+    // 先记 N 再归并：观测窗口与已知表毫无重合（跳跃滚动）时，要靠 N 定位插入点
+    turnAnchors.forEach((element, turnId) => {
+      // conversation-turn-N 对同一 turnId 不可变（分支编辑/重新生成会换新 id），
+      // 已记录过就跳过 DOM 查询，避免每次 extract 对所有锚点做 querySelector
+      if (this.outlineTurnNumbers.has(turnId)) return
+      const turnNumber = this.getChatGPTTurnNumber(element)
+      if (turnNumber !== null) this.recordOutlineTurnNumber(turnId, turnNumber)
     })
+    reconcileObservedTurnOrder(this.outlineTurnOrder, Array.from(turnAnchors.keys()), (turnId) =>
+      this.outlineTurnNumbers.get(turnId),
+    )
+  }
 
-    if (newTurns.length === 0) return
-
-    // 如果之前已经有记录，且首次出现的 turn 位于已知 turn 之前（比如用户向上滚动揭示出更早的 turn），
-    // 把新 turn 插入到对应位置之前。简单实现：用 turnAnchors 当前的 anchor.index 作为相对序，
-    // 但为保持全局单调性，统一在尾部追加，靠 anchor.index 的当前值作为合并排序时的次要键。
-    for (const turnId of newTurns) {
-      this.outlineTurnFirstSeenIndex.set(turnId, this.outlineTurnFirstSeenCounter++)
+  /**
+   * 记录 turn 的 conversation-turn-N。同一 N 已被其他 turnId 占用时，说明该位置
+   * 挂载了新版本 turn（重新生成 / 分支编辑会卸载旧 turn、换上不同 id 的新 turn），
+   * 必须把旧版本的缓存条目一并淘汰——否则旧回答的标题会永久残留在大纲里，
+   * 点击时只能等到超时（节点早已销毁），形成"幽灵标题"死链。
+   */
+  private recordOutlineTurnNumber(turnId: string, turnNumber: number): void {
+    if (this.outlineTurnNumbers.get(turnId) === turnNumber) return
+    const existingOwner = this.outlineTurnNumberOwners.get(turnNumber)
+    if (existingOwner && existingOwner !== turnId) {
+      this.evictOutlineTurnCache(existingOwner)
     }
+    // turnId 换了 N（理论上不发生，防御性处理）：摘掉旧 N 的归属，
+    // 避免旧 N 之后被其他 turn 占用时误伤
+    const previous = this.outlineTurnNumbers.get(turnId)
+    if (previous !== undefined && this.outlineTurnNumberOwners.get(previous) === turnId) {
+      this.outlineTurnNumberOwners.delete(previous)
+    }
+    this.outlineTurnNumbers.set(turnId, turnNumber)
+    this.outlineTurnNumberOwners.set(turnNumber, turnId)
   }
 
-  private getTurnSortIndex(
-    turnId: string | null,
-    turnAnchors: Map<string, ChatGPTTurnAnchor>,
-  ): number {
-    if (!turnId) return Number.MAX_SAFE_INTEGER
-    const anchor = turnAnchors.get(turnId)
-    if (anchor) return anchor.index
-    const firstSeen = this.outlineTurnFirstSeenIndex.get(turnId)
-    return typeof firstSeen === "number" ? firstSeen + 1_000_000 : Number.MAX_SAFE_INTEGER
+  /** 淘汰某个 turnId 的全部大纲缓存：条目、全局顺序表、N 与 TOC 绑定一并清掉。 */
+  private evictOutlineTurnCache(turnId: string): void {
+    for (const [id, entry] of this.outlineItemCache) {
+      if (entry.turnId === turnId) this.outlineItemCache.delete(id)
+    }
+    const orderIndex = this.outlineTurnOrder.indexOf(turnId)
+    if (orderIndex >= 0) this.outlineTurnOrder.splice(orderIndex, 1)
+    const turnNumber = this.outlineTurnNumbers.get(turnId)
+    this.outlineTurnNumbers.delete(turnId)
+    if (turnNumber !== undefined && this.outlineTurnNumberOwners.get(turnNumber) === turnId) {
+      this.outlineTurnNumberOwners.delete(turnNumber)
+    }
+    this.outlineTurnTocIndex.delete(turnId)
   }
 
-  private updateChatGPTOutlineCache(
-    outline: OutlineItem[],
-    turnAnchors: Map<string, ChatGPTTurnAnchor>,
-  ): void {
+  /**
+   * 解析 turn 的 conversation-turn-N。挂载态的 N 在内层 section 的 data-testid 上，
+   * 外层 shell（div[data-turn-id-container]）没有 N，需要向内层找；离屏空壳拿不到 N，
+   * 返回 null 由调用方保留旧值或走兜底。
+   */
+  private getChatGPTTurnNumber(element: Element): number | null {
+    const own = this.parseConversationTurnNumber(element.getAttribute("data-testid"))
+    if (own !== null) return own
+    const inner = element.querySelector('[data-testid^="conversation-turn-"]')
+    return inner ? this.parseConversationTurnNumber(inner.getAttribute("data-testid")) : null
+  }
+
+  private parseConversationTurnNumber(testid: string | null): number | null {
+    const match = /^conversation-turn-(\d+)/.exec(testid || "")
+    if (!match) return null
+    const value = parseInt(match[1], 10)
+    return Number.isNaN(value) ? null : value
+  }
+
+  private updateChatGPTOutlineCache(outline: OutlineItem[]): void {
     const orderByTurn = new Map<string, number>()
 
     for (const item of outline) {
       if (!item.id) continue
-      if (this.isNativeTocOutlineId(item.id)) continue
+      // 原生 TOC 合成条目不入缓存：挂载态下它的 id 是 messageId 而非
+      // native-toc 前缀，单靠 isNativeTocOutlineId 会漏判，用 navigationId 兜住
+      if (this.isNativeTocOutlineId(item.id) || item.navigationId) continue
 
       const turnId = this.getChatGPTTurnId(item.element)
       const orderKey = turnId || item.id
       const orderInTurn = orderByTurn.get(orderKey) || 0
       orderByTurn.set(orderKey, orderInTurn + 1)
 
-      const firstSeenTurnIndex =
-        turnId && this.outlineTurnFirstSeenIndex.has(turnId)
-          ? (this.outlineTurnFirstSeenIndex.get(turnId) as number)
-          : turnAnchors.get(turnId || "")?.index ?? Number.MAX_SAFE_INTEGER
       const cached = this.outlineItemCache.get(item.id)
 
       this.outlineItemCache.set(item.id, {
@@ -3185,7 +3256,6 @@ export class ChatGPTAdapter extends SiteAdapter {
         level: item.level,
         text: item.text,
         turnId,
-        firstSeenTurnIndex,
         orderInTurn,
         isUserQuery: item.isUserQuery,
         isTruncated: item.isTruncated,
@@ -3196,18 +3266,17 @@ export class ChatGPTAdapter extends SiteAdapter {
 
   private mergeCachedChatGPTOutlineItems(
     outline: OutlineItem[],
-    turnAnchors: Map<string, ChatGPTTurnAnchor>,
     maxLevel: number,
     includeUserQueries: boolean,
     showWordCount: boolean,
     hasNativeTocEntries = false,
   ): OutlineItem[] {
-    if (this.outlineItemCache.size === 0) return outline
-
-    const currentIds = new Set(outline.map((item) => item.id).filter((id): id is string => !!id))
     const hasNativeTocUserQueries =
       hasNativeTocEntries || outline.some((item) => this.isNativeTocOutlineId(item.id))
-    let appended = 0
+    // 无缓存可回填、也没有原生 TOC 条目需要交错时，DOM 顺序即最终顺序
+    if (this.outlineItemCache.size === 0 && !hasNativeTocUserQueries) return outline
+
+    const currentIds = new Set(outline.map((item) => item.id).filter((id): id is string => !!id))
     const merged: OutlineItem[] = [...outline]
 
     for (const entry of this.outlineItemCache.values()) {
@@ -3227,18 +3296,37 @@ export class ChatGPTAdapter extends SiteAdapter {
         id: entry.id,
         wordCount: showWordCount ? entry.wordCount : undefined,
       })
-      appended += 1
     }
 
-    if (appended === 0) return outline
+    // 排序必须使用单一全局坐标，且无论本次是否有缓存回填都走同一出口——否则
+    // 有无回填的临界点上两套排序逻辑行为不一致，会产生排版跳变。原生 TOC 提问
+    // 用 TOC 序号，其余条目统一经 resolveOutlineGroupIndex 换算到同一坐标系
+    // （有 TOC 时优先真实绑定与插值，无 TOC 时用 conversation-turn-N）。绝不能
+    // 混用"已挂载 turn 的局部序号"——它只反映当前虚拟滚动窗口内的相对位置，
+    // 会把缓存回填的标题排到错误的问题下面。
+    const turnOrderIndex = new Map<string, number>()
+    this.outlineTurnOrder.forEach((turnId, index) => turnOrderIndex.set(turnId, index))
+    const tocItemCount = merged.reduce(
+      (count, item) =>
+        this.getNativeTocOutlineIndex(item.navigationId || item.id) !== null ? count + 1 : count,
+      0,
+    )
+    // 预排序绑定表 + 二分查找：每条目一次解析的均摊成本从 O(n) 降到 O(log n)
+    const resolveGroupIndex = createOutlineGroupIndexResolver({
+      turnNumbers: this.outlineTurnNumbers,
+      turnOrder: this.outlineTurnOrder,
+      turnOrderIndex,
+      turnTocIndex: this.outlineTurnTocIndex,
+      tocItemCount,
+      hasNativeToc: hasNativeTocUserQueries,
+    })
 
     return merged
       .map((item, originalIndex) => {
         const cached = item.id ? this.outlineItemCache.get(item.id) : undefined
         const turnId = cached?.turnId || this.getChatGPTTurnId(item.element)
         const nativeTocIndex = this.getNativeTocOutlineIndex(item.navigationId || item.id)
-        const turnIndex =
-          nativeTocIndex !== null ? nativeTocIndex * 2 : this.getTurnSortIndex(turnId, turnAnchors)
+        const turnIndex = nativeTocIndex !== null ? nativeTocIndex : resolveGroupIndex(turnId)
         return {
           item,
           originalIndex,
@@ -3289,7 +3377,7 @@ export class ChatGPTAdapter extends SiteAdapter {
 
     // 2) 退而求其次：返回 turn-shell
     if (entry.turnId) {
-      const shell = this.getOrderedChatGPTTurnAnchors(container).get(entry.turnId)?.element
+      const shell = this.getOrderedChatGPTTurnAnchors(container).get(entry.turnId)
       if (shell) return shell
     }
 
@@ -3350,11 +3438,23 @@ export class ChatGPTAdapter extends SiteAdapter {
       if (nativeTocEntry) {
         if (nativeTocEntry.element) return nativeTocEntry.element
 
+        const scrollTopBefore = this.getNativeTocScrollTop()
+        const activeIndexBefore = this.getActiveNativeTocIndex()
+
         nativeTocEntry.button.scrollIntoView({ block: "nearest", inline: "nearest" })
         nativeTocEntry.button.click()
 
         const resolvedTarget = await this.waitForNativeTocUserQuery(nativeTocEntry, item.text)
         if (resolvedTarget) return resolvedTarget
+
+        // 点击已触发 ChatGPT 自身导航（激活项或滚动位置变化）：最终位置以站点为准，
+        // 不能再走文本/索引兜底——虚拟滚动下挂载的提问不全，且空文本提问（如纯图片
+        // 提问）会被 startsWith("") 通配命中，把页面拽到错误的问题上
+        const navigated =
+          this.getActiveNativeTocIndex() === nativeTocEntry.index ||
+          activeIndexBefore !== this.getActiveNativeTocIndex() ||
+          (scrollTopBefore !== null && this.getNativeTocScrollTop() !== scrollTopBefore)
+        if (navigated) return null
       }
     }
 
@@ -3372,7 +3472,53 @@ export class ChatGPTAdapter extends SiteAdapter {
       return cachedTarget
     }
 
+    // 深层离屏：真实节点和 turn-shell 都被虚拟滚动回收时，借该条目所属问题
+    // 的原生 TOC 按钮唤醒该区域（ChatGPT 会重新挂载附近 turn），再二次定位
+    if (item.id && !item.isUserQuery) {
+      const revived = await this.reviveCachedOutlineTargetViaNativeToc(item.id)
+      if (revived) return revived
+    }
+
     return super.resolveOutlineTarget(item, queryIndex)
+  }
+
+  /**
+   * 唤醒深层离屏的缓存标题：按全局顺序表找离其 turn 最近的原生 TOC 绑定，
+   * 点击对应按钮让 ChatGPT 挂载该区域，再等待目标重新出现。
+   */
+  private async reviveCachedOutlineTargetViaNativeToc(id: string): Promise<Element | null> {
+    const entry = this.outlineItemCache.get(id)
+    if (!entry?.turnId) return null
+
+    const tocIndex = this.resolveNearestBoundNativeTocIndex(entry.turnId)
+    if (tocIndex === null) return null
+
+    const tocEntry = this.getNativeTocButtonEntryForIndex(tocIndex)
+    if (!tocEntry) return null
+
+    tocEntry.button.scrollIntoView({ block: "nearest", inline: "nearest" })
+    tocEntry.button.click()
+
+    return this.waitForCachedChatGPTOutlineTargetRemount(id)
+  }
+
+  /** 全局顺序表上离 turnId 最近的 TOC 绑定序号（优先向前找所属问题，找不到再向后） */
+  private resolveNearestBoundNativeTocIndex(turnId: string): number | null {
+    const direct = this.outlineTurnTocIndex.get(turnId)
+    if (direct !== undefined) return direct
+
+    const position = this.outlineTurnOrder.indexOf(turnId)
+    if (position < 0) return null
+
+    for (let i = position - 1; i >= 0; i--) {
+      const bound = this.outlineTurnTocIndex.get(this.outlineTurnOrder[i])
+      if (bound !== undefined) return bound
+    }
+    for (let i = position + 1; i < this.outlineTurnOrder.length; i++) {
+      const bound = this.outlineTurnTocIndex.get(this.outlineTurnOrder[i])
+      if (bound !== undefined) return bound
+    }
+    return null
   }
 
   private scrollIntoViewForRevive(element: HTMLElement): void {
@@ -3577,9 +3723,6 @@ export class ChatGPTAdapter extends SiteAdapter {
     // 获取所有潜在的节点（按文档顺序）
     const allElements = Array.from(container.querySelectorAll(combinedSelector))
 
-    const nativeTocEntries =
-      includeUserQueries && !options?.skipNativeToc ? this.getNativeTocEntries() : []
-
     allElements.forEach((element, index) => {
       const tagName = element.tagName.toLowerCase()
       const isUserQuery = element.matches(userQuerySelector)
@@ -3673,8 +3816,28 @@ export class ChatGPTAdapter extends SiteAdapter {
       }
     })
 
+    // SPA 切换过渡期：跳过 cache 写入与合并，仅返回当前 DOM 真实可见的内容。
+    // ChatGPT 在 URL 改变后还会异步把旧对话的 DOM 替换为新对话的，提前写 cache
+    // 会把旧对话节点污染进新对话；提前 merge 又会把上次留存的 cache（如果有）
+    // 追加到末尾。等过渡期结束再让 cache 介入即可。
+    // 过渡期内也不取原生 TOC（此时 TOC 还是上一个对话的），DOM 实时内容里
+    // 已包含挂载态的用户提问，文档顺序即正确顺序。
+    if (this.isInOutlineCacheTransition()) {
+      // 当前挂载 turn 与切换前记录的旧对话完全不重合，说明 DOM 已替换为
+      // 新对话：提前结束过渡期，恢复正常提取，避免固定时长的降级窗口。
+      // 仍有重合或暂无挂载 turn（替换中途）时保持过渡期，由超时兜底。
+      const currentTurnIds = Array.from(this.getOrderedChatGPTTurnAnchors(container).keys())
+      const domReplaced =
+        currentTurnIds.length > 0 &&
+        currentTurnIds.every((turnId) => !this.outlineCacheTransitionFromTurnIds.has(turnId))
+      if (!domReplaced) return outline
+      this.outlineCacheTransitionEndAt = 0
+    }
+
+    const nativeTocEntries =
+      includeUserQueries && !options?.skipNativeToc ? this.getNativeTocEntries() : []
+
     if (nativeTocEntries.length > 0) {
-      const sortedEntries: ChatGPTOutlineSortEntry[] = []
       const lastNativeTocIndex = nativeTocEntries.reduce(
         (maxIndex, entry) => Math.max(maxIndex, entry.index),
         -1,
@@ -3693,76 +3856,42 @@ export class ChatGPTAdapter extends SiteAdapter {
 
         return undefined
       }
-      const visibleUserAnchors = nativeTocEntries
-        .filter((entry): entry is ChatGPTNativeTocEntry & { element: Element } =>
-          Boolean(entry.element),
-        )
-        .map((entry) => ({
-          index: entry.index,
-          renderOrder: this.getElementRenderOrder(entry.element, container),
-        }))
-        .sort((left, right) => left.renderOrder - right.renderOrder)
 
-      const activeTocEntry = nativeTocEntries.find((entry) => entry.isActive)
-      const estimateUserOrderForElement = (element: Element): number => {
-        const elementOrder = this.getElementRenderOrder(element, container)
-        let previousAnchor: { index: number; renderOrder: number } | undefined
-        let nextAnchor: { index: number; renderOrder: number } | undefined
+      // 原生 TOC 覆盖全部提问（含已离屏的），用它替换 DOM 扫描到的挂载态提问，
+      // 避免同一条提问以两种来源重复出现
+      // 先把真实 DOM 提问写入缓存再过滤：原生 TOC 合成条目不入缓存，若不缓存
+      // 提问，TOC 被收起/响应式隐藏后离屏提问将无缓存可回填，从大纲中全部蒸发。
+      // merge 阶段在 TOC 存续期间会过滤缓存提问，不会造成重复显示。
+      this.updateChatGPTOutlineCache(outline)
+      outline = outline.filter((item) => !item.isUserQuery)
 
-        for (const anchor of visibleUserAnchors) {
-          if (anchor.renderOrder <= elementOrder) {
-            previousAnchor = anchor
-          } else {
-            nextAnchor = anchor
-            break
-          }
-        }
-
-        if (previousAnchor) return previousAnchor.index
-        if (nextAnchor) return Math.max(0, nextAnchor.index - 1)
-        return activeTocEntry?.index ?? 0
-      }
-
+      // 原生 TOC 提问先按 TOC 顺序追加到末尾；最终顺序由
+      // mergeCachedChatGPTOutlineItems 按统一全局坐标排序决定，
+      // 这里不再单独做一套排序
       nativeTocEntries.forEach((entry) => {
-        sortedEntries.push({
-          item: this.createNativeTocUserQueryOutlineItem(entry, calculateNativeTocWordCount(entry)),
-          order: entry.index * 100000,
-        })
+        outline.push(
+          this.createNativeTocUserQueryOutlineItem(entry, calculateNativeTocWordCount(entry)),
+        )
       })
-
-      outline
-        .filter((item) => !item.isUserQuery)
-        .forEach((item, index) => {
-          const orderBase = item.element ? estimateUserOrderForElement(item.element) : 0
-          sortedEntries.push({
-            item,
-            order: orderBase * 100000 + 50000 + index,
-          })
-        })
-
-      outline = sortedEntries
-        .sort((left, right) => left.order - right.order)
-        .map(({ item }) => item)
     }
 
     const turnAnchors = this.getOrderedChatGPTTurnAnchors(container)
 
-    // SPA 切换过渡期：跳过 cache 写入与合并，仅返回当前 DOM 真实可见的内容。
-    // ChatGPT 在 URL 改变后还会异步把旧对话的 DOM 替换为新对话的，提前写 cache
-    // 会把旧对话节点污染进新对话；提前 merge 又会把上次留存的 cache（如果有）
-    // 追加到末尾。等过渡期结束再让 cache 介入即可。
-    if (this.isInOutlineCacheTransition()) {
-      return outline
+    // 原生 TOC 的提问序号是全局精确坐标：趁 turn 仍挂载、TOC 条目已绑定到
+    // 真实节点时记录 turnId → TOC 序号，merge 排序时整条大纲共用这一套坐标。
+    for (const entry of nativeTocEntries) {
+      if (!entry.element) continue
+      const turnId = this.getChatGPTTurnId(entry.element)
+      if (turnId) this.outlineTurnTocIndex.set(turnId, entry.index)
     }
 
-    this.recordTurnDocumentOrders(turnAnchors)
-    this.updateChatGPTOutlineCache(outline, turnAnchors)
+    this.syncOutlineTurnOrder(turnAnchors)
+    this.updateChatGPTOutlineCache(outline)
 
     // 始终尝试与缓存合并：虚拟滚动可能让 shell 数量也缩水，仅靠"shell > role 数"
     // 的判定会漏掉只剩当前视口可见的极端情况。合并函数自身在没有可追加项时是 no-op。
     return this.mergeCachedChatGPTOutlineItems(
       outline,
-      turnAnchors,
       maxLevel,
       includeUserQueries,
       showWordCount,
