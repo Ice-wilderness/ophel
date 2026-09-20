@@ -112,6 +112,11 @@ type GeminiPrivateSelectors = SitePrivateSelectors & {
   canvasCodeIcon: string[]
   canvasDocumentIcon: string[]
   canvasCard: string
+  canvasInlinePreview: string
+  canvasSidePanel: string
+  canvasPrevVersionButton: string
+  canvasNextVersionButton: string
+  canvasVersionDisabled: string
   canvasShareArtifact: string
   canvasArtifactContainer: string
   canvasEntryChip: string
@@ -171,8 +176,8 @@ export interface GeminiSiteConfig extends BuiltinSiteConfig {
   sitePrivateSelectors: GeminiPrivateSelectors
 }
 
-/** 内置修复修改默认配置时必须递增，使旧缓存 patch 自动失效。 */
-export const GEMINI_CONFIG_VERSION = 7
+/** 内置修复修改默认配置时递增（相对上一 release 版本 +1），使旧缓存 patch 自动失效。一次发版周期内无需重复递增。 */
+export const GEMINI_CONFIG_VERSION = 6
 
 const createGeminiConfig = (): GeminiSiteConfig => {
   const userQuery = "user-query"
@@ -185,17 +190,29 @@ const createGeminiConfig = (): GeminiSiteConfig => {
   const immersivePanel = "immersive-panel"
   const sharePage = "share-landing-page"
   const visuallyHidden = ".cdk-visually-hidden"
-  const canvasCard = '[data-test-id="gem-processing-card"]'
+  const canvasCard = 'gem-processing-card, [data-test-id="gem-processing-card"]'
   const canvasEntryChip = "immersive-entry-chip"
-  const deepResearchPanel = "immersive-panel deep-research-immersive-panel"
-  const canvasCodePanel = "immersive-panel code-immersive-panel"
-  const canvasDocumentPanel = "immersive-panel extended-response-panel:has(canvas-create-button)"
+  const deepResearchPanel =
+    "deep-research-immersive-panel, immersive-panel deep-research-immersive-panel"
+  const canvasInlinePreview = "inline-preview, .inline-preview-container"
+  const canvasSidePanel =
+    "immersive-panel code-immersive-panel, code-immersive-panel, immersive-panel extended-response-panel:has(.code-editor), immersive-panel extended-response-panel:has(canvas-create-button)"
+  const canvasCodePanel = `${canvasInlinePreview}, immersive-entry-chip inline-preview, ${canvasSidePanel}`
+  const canvasDocumentPanel =
+    "immersive-panel extended-response-panel:has(canvas-create-button), extended-response-panel:has(canvas-create-button)"
+  const canvasPrevVersionButton =
+    'gem-icon-button[arialabel*="上一版本" i] button, gem-icon-button[arialabel*="Previous version" i] button, button[aria-label*="上一版本" i], button[aria-label*="Previous version" i], gem-icon-button[fonticonname="undo"] button'
+  const canvasNextVersionButton =
+    'gem-icon-button[arialabel*="下一版本" i] button, gem-icon-button[arialabel*="Next version" i] button, button[aria-label*="下一版本" i], button[aria-label*="Next version" i], gem-icon-button[fonticonname="redo"] button'
+  const canvasVersionDisabled =
+    '.gem-button-disabled, .gem-icon-button-disabled, [disabled], [aria-disabled="true"], [inert]'
   const shareAssistantMarkdown = "message-content .markdown"
   const deepResearchDocumentShare = `${sharePage} immersive-share-landing-page structured-content-container[data-test-id="deep-research-block"]`
   const deepResearchArtifactShare = `${sharePage} structured-content-container[data-test-id="immersive-artifact-content"]`
   const canvasArtifactContainer = ".immersive-artifact-container"
   const canvasCodeBlock = "code-block"
-  const canvasCodeEditor = 'xap-code-editor[data-test-id="code-editor"]'
+  const canvasCodeEditor =
+    'xap-code-editor[data-test-id="code-editor"], xap-code-editor, [data-test-id="code-editor"], code-editor, .code-editor, .monaco-editor'
   const messageWidth = ".conversation-container, conversation-container"
   const inputWidth = ".input-area-container"
   const layoutScope = "bard-sidenav-content, body:not(:has(bard-sidenav-content)) main.chat-app"
@@ -443,12 +460,29 @@ const createGeminiConfig = (): GeminiSiteConfig => {
       canvasDocumentPanel,
       panelToolbarActions: "toolbar .action-buttons",
       deepResearchPanelExportButton: '[data-test-id="export-menu-button"]',
-      deepResearchPanelCloseButton: `${deepResearchPanel} [data-test-id="close-button"], ${immersivePanel} [data-test-id="close-button"]`,
+      deepResearchPanelCloseButton: [
+        "deep-research-immersive-panel toolbar .close-button button",
+        'deep-research-immersive-panel toolbar button:has(mat-icon[fonticon="close"])',
+        'deep-research-immersive-panel toolbar button[aria-label*="关闭"]',
+        'deep-research-immersive-panel toolbar button[aria-label*="close" i]',
+        'deep-research-immersive-panel [data-test-id="close-button"]',
+        `${immersivePanel} [data-test-id="close-button"]`,
+      ].join(", "),
       canvasPanelDownloadButton: '[data-test-id="download-preview-button"]',
       panelThinking: "thinking-panel",
       panelToolbarTitle: "toolbar h2.title-text",
-      canvasPanelTitle: "toolbar h2.title-text, .title-text",
-      canvasPanelCloseButton: 'toolbar [data-test-id="close-button"]',
+      canvasPanelTitle:
+        "toolbar h2.title-text, .title-wrapper .title, .title-container .title, .title-text, .title",
+      canvasPanelCloseButton: [
+        ".close-button button",
+        'button[aria-label*="关闭"]',
+        'button[aria-label*="close" i]',
+        'gem-icon-button[fonticonname="close"] button',
+        'gem-icon-button[arialabel*="关闭"] button',
+        'button:has(mat-icon[fonticon="close"])',
+        'button:has(mat-icon[data-mat-icon-name="close"])',
+        '[data-test-id="close-button"]',
+      ].join(", "),
       chatsExpandableSection: 'expandable-section[data-test-id="chats-expandable-section"]',
       chatsExpandableSectionFallback: 'expandable-section[storagekey="chats"]',
       chatsExpandableSectionHost: "expandable-section",
@@ -535,7 +569,8 @@ const createGeminiConfig = (): GeminiSiteConfig => {
         "[data-image-attachment-index]",
       ],
       userQueryImage: ["img[data-test-id='uploaded-img']", ".preview-image"],
-      uploadedFile: '[data-test-id="uploaded-file"]',
+      uploadedFile:
+        '[data-test-id="uploaded-file"], user-query-file-preview, .new-file-preview-container',
       sharePage,
       shareTurn: `${sharePage} .share-turn-viewer`,
       shareAssistantMarkdown,
@@ -544,6 +579,15 @@ const createGeminiConfig = (): GeminiSiteConfig => {
         "model-thoughts",
         "thinking-overlay",
         "sources-list",
+        "deep-research-source-lists",
+        ".deep-research-source-lists",
+        ".end-of-report-marker",
+        '[data-test-id="used-sources-button"]',
+        '[data-test-id="used-sources-list"]',
+        '[aria-controls="used-sources-list"]',
+        ".used-sources",
+        '[data-test-id="collapsible-thinking-button"]',
+        ".collapsible-thinking-button",
         canvasEntryChip,
         "gem-processing-card",
         canvasCard,
@@ -579,14 +623,22 @@ const createGeminiConfig = (): GeminiSiteConfig => {
         ".loader",
       ],
       generatedImageButton: "button.image-button",
-      driveViewer: `${immersivePanel} .drive-viewer`,
-      driveViewerOwner: ".drive-viewer",
+      driveViewer: `${immersivePanel} .drive-viewer, .drive-viewer, drive-viewer, [data-test-id="drive-viewer"]`,
+      driveViewerOwner: ".drive-viewer, drive-viewer",
       driveViewerTextContent: ".drive-viewer-text-content",
       driveViewerError: ".drive-viewer-msg-error",
       driveViewerTextCandidate: ".drive-viewer-text-content pre, .drive-viewer-text-content",
       driveViewerName: ".drive-viewer-toolstrip-name",
       driveActiveItemInfo: '[id="drive-active-item-info"], div[style*="display:none"]',
-      driveViewerCloseButton: ".drive-viewer-close-button",
+      driveViewerCloseButton: [
+        ".drive-viewer-close-button",
+        "toolbar .close-button button",
+        'toolbar button:has(mat-icon[fonticon="close"])',
+        'toolbar button:has(mat-icon[data-mat-icon-name="close"])',
+        'button[aria-label*="关闭"]',
+        'button[aria-label*="close" i]',
+        '[data-test-id="close-button"]',
+      ].join(", "),
       uploadedFileName: ['[data-test-id="filename-label"]', ".filename-label", ".new-file-name"],
       uploadedFileAriaAction: "a[aria-label], button[aria-label]",
       uploadedFileType: ".new-file-type",
@@ -594,10 +646,28 @@ const createGeminiConfig = (): GeminiSiteConfig => {
       deepResearchDocumentShare,
       deepResearchArtifactShare,
       deepResearchConfirmation: "deep-research-confirmation-widget",
-      deepResearchPanelMarkdown: ["#extended-response-markdown-content", shareAssistantMarkdown],
+      deepResearchPanelMarkdown: [
+        "structured-content-container #extended-response-markdown-content",
+        "structured-content-container message-content .markdown",
+        "structured-content-container message-content",
+        "structured-content-container",
+        "#extended-response-markdown-content",
+        "message-content#extended-response-message-content .markdown",
+        shareAssistantMarkdown,
+      ],
       deepResearchAppDocumentMarkdown: [
+        `${deepResearchPanel} structured-content-container #extended-response-markdown-content`,
+        `${deepResearchPanel} structured-content-container message-content .markdown`,
+        `${deepResearchPanel} structured-content-container message-content`,
+        `${deepResearchPanel} structured-content-container`,
+        "deep-research-immersive-panel structured-content-container #extended-response-markdown-content",
+        "deep-research-immersive-panel structured-content-container message-content .markdown",
+        "deep-research-immersive-panel structured-content-container",
         `${deepResearchPanel} #extended-response-markdown-content`,
+        `${deepResearchPanel} message-content#extended-response-message-content .markdown`,
+        `${deepResearchPanel} message-content .markdown`,
         `${deepResearchPanel} ${shareAssistantMarkdown}`,
+        "#extended-response-markdown-content",
       ],
       deepResearchAppTrigger: `${assistantResponse} ${canvasCard}, ${assistantResponse} ${canvasEntryChip}`,
       deepResearchIcon: [
@@ -617,6 +687,11 @@ const createGeminiConfig = (): GeminiSiteConfig => {
         'mat-icon[data-mat-icon-name="article"]',
       ],
       canvasCard,
+      canvasInlinePreview,
+      canvasSidePanel,
+      canvasPrevVersionButton,
+      canvasNextVersionButton,
+      canvasVersionDisabled,
       canvasShareArtifact: `${sharePage} ${canvasArtifactContainer}`,
       canvasArtifactContainer,
       canvasEntryChip,
@@ -635,14 +710,16 @@ const createGeminiConfig = (): GeminiSiteConfig => {
       canvasTabRadio: "button[role='radio']",
       canvasTabSelected: ".mat-button-toggle-checked",
       canvasHidden: ".hidden",
-      canvasCodeContent: '[data-test-id="code-content"], pre code, code',
+      canvasCodeContent:
+        '[data-test-id="code-content"], .code-content:not(web-preview):not(.hidden), pre code, code',
       canvasMonacoEditor: ".monaco-editor",
       canvasMonacoTextarea: "textarea.inputarea",
       canvasMonacoScrollable: ".monaco-scrollable-element",
       canvasMonacoLine: ".view-lines .view-line",
-      canvasMonacoContentHeight: ".view-lines, .margin, .lines-content",
-      canvasTitle: ".title-text, .card-title",
-      canvasNestedTitle: ".title-text",
+      canvasMonacoContentHeight: ".view-lines, .margin-view-overlays, .margin",
+      canvasTitle:
+        ".title-wrapper .title, .title-container .title, .title-text, .card-title, .title",
+      canvasNestedTitle: ".title-wrapper .title, .title-container .title, .title-text, .title",
       canvasCodeLanguage: ".code-block-decoration span",
       canvasMode: "[data-mode-id]",
       outlineMessageContent: "message-content",

@@ -62,6 +62,7 @@ import { setSafeHTML } from "~utils/trusted-types"
 import {
   GEMINI_CANVAS_CODE_REQUEST_EVENT,
   GEMINI_CANVAS_CODE_RESPONSE_EVENT,
+  installGeminiCanvasCodeBridge,
 } from "~core/gemini-canvas-code-bridge"
 import { WatermarkRemover } from "~core/watermark-remover"
 import {
@@ -124,7 +125,7 @@ const GEMINI_ACCOUNT_HINT_REGEX =
   /(google|account|账号|帳號|conta|compte|cuenta|konto|アカウント|계정|учет)/i
 const GEMINI_UNAVAILABLE_SHARED_FILE_HINT_REGEX =
   /(unable|cannot|can't|can not|无法|無法|不可).*(view|preview|download|共享|分享|shared|查看|预览|預覽|下载|下載)|shared.*(file|download|preview)|共享对话中的文件|共享對話中的文件/i
-const GEMINI_CANVAS_CODE_REQUEST_TIMEOUT_MS = 900
+const GEMINI_CANVAS_CODE_REQUEST_TIMEOUT_MS = 2500
 const GEMINI_PANEL_MARKDOWN_ACTIONS_CLASS = "gh-gemini-panel-markdown-actions"
 const GEMINI_PANEL_MARKDOWN_ACTION_CLASS = "gh-gemini-panel-markdown-action"
 const GEMINI_PANEL_MARKDOWN_ACTIONS_STYLE_ID = "gh-gemini-panel-markdown-actions-style"
@@ -159,6 +160,16 @@ interface GeminiCanvasCodeArtifact {
   title: string
   language: string
   code: string
+}
+
+interface GeminiCanvasTarget {
+  type: "preview" | "card"
+  element: HTMLElement
+}
+
+interface GeminiCanvasArtifactContext {
+  occurrenceIndex: number
+  totalOccurrences: number
 }
 
 const GEMINI_MYSTUFF_ACTIVE_CLASS = "ophel-gemini-mystuff-active"
@@ -806,7 +817,7 @@ export class GeminiAdapter extends SiteAdapter {
   private canvasPanelWatchStop: (() => void) | null = null
   private canvasPanelObservers = new WeakMap<Element, () => void>()
   private canvasPanelTooltipBindings = new WeakMap<HTMLElement, DomTooltipBinding>()
-  private exportOpenedCanvasPanel = false
+  private exportOpenedCanvasPanels = new Set<HTMLElement>()
   private outlineWordCountCache = new WeakMap<Element, GeminiOutlineWordCountCacheEntry>()
 
   private getUserPathPrefix(): string {
@@ -1289,7 +1300,13 @@ export class GeminiAdapter extends SiteAdapter {
 
   private getDeepResearchPanelMarkdown(panel: Element): string {
     const markdown = this.getDeepResearchPanelMarkdownElement(panel)
-    return markdown ? this.extractAssistantResponseTextWithAssets(markdown).trim() : ""
+    if (!markdown) return ""
+    const target =
+      markdown.closest("structured-content-container") ||
+      markdown.querySelector("structured-content-container") ||
+      panel.querySelector("structured-content-container") ||
+      markdown
+    return this.extractAssistantResponseTextWithAssets(target).trim()
   }
 
   private async getGeminiCanvasPanelMarkdown(panel: Element): Promise<string> {
@@ -1322,6 +1339,7 @@ export class GeminiAdapter extends SiteAdapter {
     )
     return (
       candidates.find((candidate) => candidate.closest(privateSelectors.panelThinking) === null) ||
+      panel.querySelector("structured-content-container") ||
       null
     )
   }
@@ -2864,7 +2882,7 @@ export class GeminiAdapter extends SiteAdapter {
   async prepareConversationExport(_context: ExportLifecycleContext): Promise<unknown> {
     await this.loadCompleteExportHistory()
 
-    this.exportOpenedCanvasPanel = false
+    this.exportOpenedCanvasPanels.clear()
     await this.prepareImagesForExport(_context)
 
     const state: GeminiExportLifecycleState = {
@@ -2949,9 +2967,11 @@ export class GeminiAdapter extends SiteAdapter {
       await this.closeDeepResearchAppDocumentPanel()
     }
 
-    if (this.exportOpenedCanvasPanel) {
-      await this.closeGeminiCanvasPanel()
-      this.exportOpenedCanvasPanel = false
+    if (this.exportOpenedCanvasPanels.size > 0) {
+      for (const panel of this.exportOpenedCanvasPanels) {
+        await this.closeGeminiCanvasPanel(panel)
+      }
+      this.exportOpenedCanvasPanels.clear()
     }
   }
 
@@ -3222,8 +3242,14 @@ export class GeminiAdapter extends SiteAdapter {
     trigger.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" })
     await new Promise((resolve) => setTimeout(resolve, 50))
     this.simulateClick(trigger)
+    trigger.click()
 
-    const viewer = (await this.waitForDriveViewer(previousViewer)) || previousViewer
+    let viewer = (await this.waitForDriveViewer(previousViewer)) || previousViewer
+    if (!viewer && file instanceof HTMLElement && file !== trigger) {
+      this.simulateClick(file)
+      file.click()
+      viewer = (await this.waitForDriveViewer(previousViewer)) || previousViewer
+    }
     if (!viewer) return null
 
     try {
@@ -3256,6 +3282,9 @@ export class GeminiAdapter extends SiteAdapter {
       file.matches("button, [role='button']") ? file : null,
       file.querySelector("button"),
       file.querySelector("[role='button']"),
+      file.querySelector(".new-file-preview-file"),
+      file.querySelector(".clickable"),
+      file.matches(".clickable") ? file : null,
     ]
 
     return (
@@ -3382,6 +3411,7 @@ export class GeminiAdapter extends SiteAdapter {
     )
     if (closeButton instanceof HTMLElement) {
       this.simulateClick(closeButton)
+      closeButton.click()
       await new Promise((resolve) => setTimeout(resolve, 150))
     }
   }
@@ -3849,7 +3879,21 @@ export class GeminiAdapter extends SiteAdapter {
    * 导出前清理 Gemini 注入的辅助可访问性节点，避免进入 Markdown。
    */
   private sanitizeAssistantExportElement(element: Element): Element {
-    const clone = element.cloneNode(true) as Element
+    // 深度研究报告：若传入的节点包含或本身是深度研究面板外层容器，只保留 structured-content-container 内的内容
+    const structuredContainer = element.matches?.("structured-content-container")
+      ? element
+      : element.querySelector?.("structured-content-container")
+
+    const sourceElement =
+      structuredContainer &&
+      (element.matches?.(
+        "deep-research-immersive-panel, response-container, .presented-response-container, .response-container-content",
+      ) ||
+        element.querySelector?.("deep-research-source-lists, .end-of-report-marker"))
+        ? structuredContainer
+        : element
+
+    const clone = sourceElement.cloneNode(true) as Element
     clone
       .querySelectorAll(this.config.sitePrivateSelectors.assistantExportNoise.join(", "))
       .forEach((node) => node.remove())
@@ -3977,8 +4021,15 @@ export class GeminiAdapter extends SiteAdapter {
   private shouldSkipOutlineHeading(heading: Element): boolean {
     if (this.isInRenderedMarkdownContainer(heading)) return true
 
-    // 仅过滤 Gemini 注入的辅助可访问性标题，避免误杀正常 Markdown 标题
+    // 仅过滤 Gemini 注入的辅助可访问性标题与来源列表，避免误杀正常 Markdown 标题
     if (heading.matches(this.config.sitePrivateSelectors.visuallyHidden)) return true
+    if (heading.closest("deep-research-source-lists")) return true
+    if (
+      heading.closest("deep-research-immersive-panel") &&
+      !heading.closest("structured-content-container")
+    ) {
+      return true
+    }
 
     return false
   }
@@ -4028,7 +4079,19 @@ export class GeminiAdapter extends SiteAdapter {
   getOutlineScrollContainer(sourceId = "conversation"): HTMLElement | null {
     if (sourceId === GEMINI_DOCUMENT_OUTLINE_SOURCE_ID) {
       const root = this.getDeepResearchDocumentOutlineRoot()
-      return findScrollableAncestor(root) || null
+      return (
+        findScrollableAncestor(root) ||
+        (root
+          ? (root
+              .closest("deep-research-immersive-panel, immersive-panel")
+              ?.querySelector(
+                '[data-test-id="scroll-container"], [cdkscrollable]',
+              ) as HTMLElement | null)
+          : null) ||
+        (document.querySelector(
+          'deep-research-immersive-panel [data-test-id="scroll-container"], deep-research-immersive-panel [cdkscrollable]',
+        ) as HTMLElement | null)
+      )
     }
 
     return this.getScrollContainer()
@@ -4094,7 +4157,7 @@ export class GeminiAdapter extends SiteAdapter {
       return this.extractDeepResearchAppMessages()
     }
 
-    if (this.hasGeminiCanvasAppArtifacts()) {
+    if (this.hasGeminiCanvasAppArtifacts() || this.hasUserQueryUploadedFiles()) {
       return this.extractGeminiConversationMessages()
     }
 
@@ -4156,6 +4219,43 @@ export class GeminiAdapter extends SiteAdapter {
     ).sort((left, right) => this.compareDomOrder(left, right))
     if (messageElements.length === 0) return null
 
+    // 建立同会话内 Canvas 标题多版次映射，确保不同版次能准确导航和归属
+    const canvasTargetContextMap = new Map<HTMLElement, GeminiCanvasArtifactContext>()
+    const titleCounts = new Map<string, number>()
+    const targetTitles = new Map<HTMLElement, string>()
+
+    for (const element of messageElements) {
+      if (element.matches(this.config.selectors.assistantResponse)) {
+        const targets = this.getGeminiCanvasTargetsFromResponse(element)
+        for (const target of targets) {
+          const title = this.extractGeminiCanvasTitle(target.element)
+          // 仅对具有有效且非兜底名称的主题统计多版次
+          if (title && title !== "Gemini Canvas") {
+            targetTitles.set(target.element, title)
+            titleCounts.set(title, (titleCounts.get(title) || 0) + 1)
+          }
+        }
+      }
+    }
+
+    const currentIndices = new Map<string, number>()
+    for (const element of messageElements) {
+      if (element.matches(this.config.selectors.assistantResponse)) {
+        const targets = this.getGeminiCanvasTargetsFromResponse(element)
+        for (const target of targets) {
+          const title = targetTitles.get(target.element)
+          if (title) {
+            const index = currentIndices.get(title) || 0
+            currentIndices.set(title, index + 1)
+            canvasTargetContextMap.set(target.element, {
+              occurrenceIndex: index,
+              totalOccurrences: titleCounts.get(title) || 1,
+            })
+          }
+        }
+      }
+    }
+
     const messages: ExportMessage[] = []
     for (const element of messageElements) {
       if (element.closest(privateSelectors.immersivePanel)) continue
@@ -4169,7 +4269,11 @@ export class GeminiAdapter extends SiteAdapter {
             ).trim()
           : this.joinExportSections(
               this.extractAssistantResponseTextWithAssets(element, collector),
-              await this.extractGeminiCanvasAppArtifactsFromResponse(element, collector),
+              await this.extractGeminiCanvasAppArtifactsFromResponse(
+                element,
+                collector,
+                canvasTargetContextMap,
+              ),
             )
 
       if (!content) continue
@@ -4383,13 +4487,75 @@ export class GeminiAdapter extends SiteAdapter {
 
     const root =
       document.querySelector(this.getResponseContainerSelector()) || this.getScrollContainer()
-    return root ? this.getGeminiCanvasCardsFromResponse(root).length > 0 : false
+    return root ? this.getGeminiCanvasTargetsFromResponse(root).length > 0 : false
+  }
+
+  private hasUserQueryUploadedFiles(): boolean {
+    if (this.isSharePage()) return false
+
+    const root =
+      document.querySelector(this.getResponseContainerSelector()) || this.getScrollContainer()
+    return root ? root.querySelector(this.config.sitePrivateSelectors.uploadedFile) !== null : false
+  }
+
+  private getGeminiCanvasTargetsFromResponse(element: Element): GeminiCanvasTarget[] {
+    const targets: GeminiCanvasTarget[] = []
+    const seen = new Set<HTMLElement>()
+
+    // 1. 优先遍历 entry chip，每个 chip 作为独立的 Canvas 宿主单元
+    const chips = Array.from(
+      element.querySelectorAll<HTMLElement>(this.config.sitePrivateSelectors.canvasEntryChip),
+    )
+    for (const chip of chips) {
+      const preview = chip.querySelector<HTMLElement>(
+        this.config.sitePrivateSelectors.canvasInlinePreview,
+      )
+      if (preview) {
+        seen.add(chip)
+        seen.add(preview)
+        targets.push({ type: "preview", element: preview })
+        continue
+      }
+
+      const card = chip.querySelector<HTMLElement>(this.config.sitePrivateSelectors.canvasCard)
+      if (card && this.isGeminiCanvasCard(card)) {
+        seen.add(chip)
+        seen.add(card)
+        targets.push({ type: "card", element: card })
+      }
+    }
+
+    // 2. 兜底：未包含在 chip 内的独立 inline-preview
+    const previews = Array.from(
+      element.querySelectorAll<HTMLElement>(this.config.sitePrivateSelectors.canvasInlinePreview),
+    )
+    for (const preview of previews) {
+      if (seen.has(preview)) continue
+      const chip = preview.closest(this.config.sitePrivateSelectors.canvasEntryChip)
+      if (chip instanceof HTMLElement && seen.has(chip)) continue
+      seen.add(preview)
+      targets.push({ type: "preview", element: preview })
+    }
+
+    // 3. 兜底：未包含在 chip 内的独立 canvasCard
+    const cards = Array.from(
+      element.querySelectorAll<HTMLElement>(this.config.sitePrivateSelectors.canvasCard),
+    )
+    for (const card of cards) {
+      if (seen.has(card)) continue
+      const chip = card.closest(this.config.sitePrivateSelectors.canvasEntryChip)
+      if (chip instanceof HTMLElement && seen.has(chip)) continue
+      if (this.isGeminiCanvasCard(card)) {
+        seen.add(card)
+        targets.push({ type: "card", element: card })
+      }
+    }
+
+    return targets
   }
 
   private getGeminiCanvasCardsFromResponse(element: Element): HTMLElement[] {
-    return Array.from(element.querySelectorAll(this.config.sitePrivateSelectors.canvasCard)).filter(
-      (node): node is HTMLElement => node instanceof HTMLElement && this.isGeminiCanvasCard(node),
-    )
+    return this.getGeminiCanvasTargetsFromResponse(element).map((t) => t.element)
   }
 
   private getGeminiCanvasShareArtifactElements(root: ParentNode): HTMLElement[] {
@@ -4421,17 +4587,33 @@ export class GeminiAdapter extends SiteAdapter {
   private async extractGeminiCanvasAppArtifactsFromResponse(
     element: Element,
     collector?: GeminiExportAssetCollector,
+    contextOrMap?: Map<HTMLElement, GeminiCanvasArtifactContext> | GeminiCanvasArtifactContext,
   ): Promise<string> {
-    const cards = this.getGeminiCanvasCardsFromResponse(element)
-    if (cards.length === 0) return ""
+    const targets = this.getGeminiCanvasTargetsFromResponse(element)
+    if (targets.length === 0) return ""
 
     const sections: string[] = []
 
-    for (const card of cards) {
-      const title = this.extractGeminiCanvasTitle(card)
+    for (const target of targets) {
+      const title = this.extractGeminiCanvasTitle(target.element)
+      const context = contextOrMap instanceof Map ? contextOrMap.get(target.element) : contextOrMap
       try {
-        const panel = await this.openGeminiCanvasCardForExport(card)
+        let panel: HTMLElement | null = null
+        if (target.type === "preview") {
+          panel = target.element
+        } else {
+          panel = await this.openGeminiCanvasCardForExport(target.element, element)
+        }
         if (!panel) continue
+
+        // 若存在同主题多版次，执行版次导航对齐
+        if (context && context.totalOccurrences > 1) {
+          await this.navigateGeminiCanvasVersion(
+            panel,
+            context.occurrenceIndex,
+            context.totalOccurrences,
+          )
+        }
 
         const content = await this.extractGeminiCanvasArtifactMarkdown(panel, title, collector)
         if (content) {
@@ -4445,7 +4627,7 @@ export class GeminiAdapter extends SiteAdapter {
     return sections.length > 0
       ? this.formatGeminiCanvasArtifactSections(sections)
       : this.formatGeminiCanvasFallbackTitles(
-          cards.map((card) => this.extractGeminiCanvasTitle(card)),
+          targets.map((target) => this.extractGeminiCanvasTitle(target.element)),
         )
   }
 
@@ -4572,24 +4754,41 @@ export class GeminiAdapter extends SiteAdapter {
     return panel instanceof HTMLElement ? panel : null
   }
 
-  private async openGeminiCanvasCardForExport(card: HTMLElement): Promise<HTMLElement | null> {
-    const hadPanel = this.getGeminiCanvasPanelElement() !== null
+  private getGeminiCanvasSidePanelElement(): HTMLElement | null {
+    const panel = document.querySelector(this.config.sitePrivateSelectors.canvasSidePanel)
+    return panel instanceof HTMLElement ? panel : null
+  }
+
+  private async openGeminiCanvasCardForExport(
+    card: HTMLElement,
+    scopeElement?: Element,
+  ): Promise<HTMLElement | null> {
     const expectedTitle = this.extractGeminiCanvasTitle(card)
-    const currentPanel = this.getGeminiCanvasPanelElement()
-    if (currentPanel && this.isGeminiCanvasPanelForTitle(currentPanel, expectedTitle)) {
-      return currentPanel
+    const chip = card.closest(this.config.sitePrivateSelectors.canvasEntryChip)
+    const localScope = (chip instanceof HTMLElement ? chip : scopeElement) || null
+
+    // 1. 优先检查当前卡片所属的 entry chip 或回复内部是否已经有 inline-preview
+    if (localScope) {
+      const existingPreview = localScope.querySelector<HTMLElement>(
+        this.config.sitePrivateSelectors.canvasInlinePreview,
+      )
+      if (existingPreview && this.isGeminiCanvasPanelForTitle(existingPreview, expectedTitle)) {
+        return existingPreview
+      }
     }
 
     card.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" })
     await this.sleep(60)
 
     for (const target of this.getGeminiCanvasCardClickTargets(card)) {
+      if (typeof target.click === "function") {
+        target.click()
+      }
       this.simulateClick(target)
-      const panel = await this.waitForGeminiCanvasPanel(expectedTitle)
+
+      const panel = await this.waitForGeminiCanvasPanel(expectedTitle, 8000, localScope)
       if (panel) {
-        if (!hadPanel) {
-          this.exportOpenedCanvasPanel = true
-        }
+        this.exportOpenedCanvasPanels.add(panel)
         return panel
       }
     }
@@ -4598,10 +4797,41 @@ export class GeminiAdapter extends SiteAdapter {
   }
 
   private getGeminiCanvasCardClickTargets(card: HTMLElement): HTMLElement[] {
-    const chip = card.closest(this.config.sitePrivateSelectors.canvasEntryChip)
-    const candidates = [card, chip].filter(
-      (candidate): candidate is HTMLElement => candidate instanceof HTMLElement,
+    const candidates: HTMLElement[] = []
+
+    // 1. 卡片内的“打开”按钮（明确的 class、aria-label 或 data-test-id）
+    const openButtons = Array.from(
+      card.querySelectorAll<HTMLElement>(
+        'gem-button.open-button button, .open-button button, button.open-button, [data-test-id*="open" i] button, [data-test-id*="open" i], button[aria-label*="Canvas" i], button[aria-label*="打开" i], button[aria-label*="open" i]',
+      ),
     )
+    candidates.push(...openButtons)
+
+    // 2. 根据文本内容或 aria-label 匹配“打开”或“Open”的按钮
+    const textButtons = Array.from(card.querySelectorAll<HTMLButtonElement>("button")).filter(
+      (btn) => {
+        const text = btn.textContent?.trim() || ""
+        const label = btn.getAttribute("aria-label") || ""
+        return (
+          /^(?:打开|open)$/i.test(text) ||
+          /在\s*Canvas\s*中打开/i.test(label) ||
+          /open\s+in\s+canvas/i.test(label)
+        )
+      },
+    )
+    candidates.push(...textButtons)
+
+    // 3. gem-button 打开按钮容器
+    const gemButtons = Array.from(
+      card.querySelectorAll<HTMLElement>("gem-button.open-button, .open-button"),
+    )
+    candidates.push(...gemButtons)
+
+    // 4. 卡片本身及 entry chip 容器兜底
+    candidates.push(card)
+    const chip = card.closest(this.config.sitePrivateSelectors.canvasEntryChip)
+    if (chip instanceof HTMLElement) candidates.push(chip)
+
     const seen = new Set<HTMLElement>()
     return candidates.filter((candidate) => {
       if (seen.has(candidate)) return false
@@ -4612,48 +4842,174 @@ export class GeminiAdapter extends SiteAdapter {
 
   private async waitForGeminiCanvasPanel(
     expectedTitle?: string,
-    timeoutMs = 3000,
+    timeoutMs = 8000,
+    localScope?: Element | null,
   ): Promise<HTMLElement | null> {
     const startedAt = Date.now()
     while (Date.now() - startedAt < timeoutMs) {
-      const panel = this.getGeminiCanvasPanelElement()
-      if (panel && this.isGeminiCanvasPanelForTitle(panel, expectedTitle)) return panel
+      // 1. 优先检测局部作用域（当前 chip 或当前 message 内）的 inline-preview
+      if (localScope) {
+        const localPreview = localScope.querySelector<HTMLElement>(
+          this.config.sitePrivateSelectors.canvasInlinePreview,
+        )
+        if (localPreview && this.isGeminiCanvasPanelForTitle(localPreview, expectedTitle)) {
+          return localPreview
+        }
+      }
+
+      // 2. 检测全局侧边栏面板（排除其他消息的 inline-preview）
+      const sidePanel = this.getGeminiCanvasSidePanelElement()
+      if (sidePanel && this.isGeminiCanvasPanelForTitle(sidePanel, expectedTitle)) {
+        return sidePanel
+      }
+
+      // 3. 兜底（若无 localScope，如单测环境）
+      if (!localScope) {
+        const panel = this.getGeminiCanvasPanelElement()
+        if (panel && this.isGeminiCanvasPanelForTitle(panel, expectedTitle)) return panel
+      }
+
       await this.sleep(100)
     }
 
-    const panel = this.getGeminiCanvasPanelElement()
-    return panel && this.isGeminiCanvasPanelForTitle(panel, expectedTitle) ? panel : null
+    if (localScope) {
+      const localPreview = localScope.querySelector<HTMLElement>(
+        this.config.sitePrivateSelectors.canvasInlinePreview,
+      )
+      if (localPreview && this.isGeminiCanvasPanelForTitle(localPreview, expectedTitle)) {
+        return localPreview
+      }
+    }
+    const sidePanel = this.getGeminiCanvasSidePanelElement()
+    if (sidePanel && this.isGeminiCanvasPanelForTitle(sidePanel, expectedTitle)) {
+      return sidePanel
+    }
+    if (!localScope) {
+      const panel = this.getGeminiCanvasPanelElement()
+      return panel && this.isGeminiCanvasPanelForTitle(panel, expectedTitle) ? panel : null
+    }
+
+    return null
   }
 
   private isGeminiCanvasPanelForTitle(panel: HTMLElement, expectedTitle?: string): boolean {
     if (!expectedTitle || expectedTitle === "Gemini Canvas") return true
 
     const panelTitle = this.extractGeminiCanvasTitle(panel, "")
-    return panelTitle === expectedTitle
+    // 如果面板尚未渲染出标题文本，也视为匹配当前打开的面板；若提取到了标题，则必须与预期标题一致
+    return !panelTitle || panelTitle === expectedTitle
   }
 
-  private async closeGeminiCanvasPanel(): Promise<void> {
-    const closeButton = this.getGeminiCanvasPanelElement()?.querySelector(
+  private async closeGeminiCanvasPanel(panel?: Element | null): Promise<void> {
+    const targetPanel = panel || this.getGeminiCanvasPanelElement()
+    const closeButton = targetPanel?.querySelector(
       this.config.sitePrivateSelectors.canvasPanelCloseButton,
     )
     if (!(closeButton instanceof HTMLElement)) return
 
     closeButton.click()
+    this.simulateClick(closeButton)
     await this.sleep(150)
+  }
+
+  private async navigateGeminiCanvasVersion(
+    panel: HTMLElement,
+    occurrenceIndex: number,
+    totalOccurrences: number,
+  ): Promise<void> {
+    if (totalOccurrences <= 1) return
+
+    const privateSelectors = this.config.sitePrivateSelectors
+    const isButtonDisabled = (btn: HTMLElement | null): boolean => {
+      if (!btn) return true
+      if (btn.hasAttribute?.("disabled") || (btn as HTMLButtonElement).disabled) return true
+      if (btn.getAttribute?.("aria-disabled") === "true") return true
+      if (btn.closest?.(privateSelectors.canvasVersionDisabled)) return true
+      const host = btn.closest?.("gem-icon-button, gem-button, button")
+      if (
+        host &&
+        (host.hasAttribute?.("disabled") ||
+          host.getAttribute?.("aria-disabled") === "true" ||
+          host.classList?.contains?.("disabled") ||
+          host.classList?.contains?.("gem-button-disabled") ||
+          host.classList?.contains?.("gem-icon-button-disabled"))
+      ) {
+        return true
+      }
+      return false
+    }
+
+    let didNavigate = false
+
+    if (occurrenceIndex === 0) {
+      // 首个版次：回退到最早版本
+      for (let i = 0; i < 15; i++) {
+        const prevBtn = panel.querySelector<HTMLElement>(privateSelectors.canvasPrevVersionButton)
+        if (!prevBtn || isButtonDisabled(prevBtn)) break
+        if (typeof prevBtn.click === "function") prevBtn.click()
+        this.simulateClick(prevBtn)
+        didNavigate = true
+        await this.sleep(200)
+      }
+    } else if (occurrenceIndex === totalOccurrences - 1) {
+      // 最后一个版次：前进到最新版本
+      for (let i = 0; i < 15; i++) {
+        const nextBtn = panel.querySelector<HTMLElement>(privateSelectors.canvasNextVersionButton)
+        if (!nextBtn || isButtonDisabled(nextBtn)) break
+        if (typeof nextBtn.click === "function") nextBtn.click()
+        this.simulateClick(nextBtn)
+        didNavigate = true
+        await this.sleep(200)
+      }
+    } else {
+      // 中间版次：先回退到最早，再按索引步进
+      for (let i = 0; i < 15; i++) {
+        const prevBtn = panel.querySelector<HTMLElement>(privateSelectors.canvasPrevVersionButton)
+        if (!prevBtn || isButtonDisabled(prevBtn)) break
+        if (typeof prevBtn.click === "function") prevBtn.click()
+        this.simulateClick(prevBtn)
+        didNavigate = true
+        await this.sleep(200)
+      }
+      for (let step = 0; step < occurrenceIndex; step++) {
+        const nextBtn = panel.querySelector<HTMLElement>(privateSelectors.canvasNextVersionButton)
+        if (!nextBtn || isButtonDisabled(nextBtn)) break
+        if (typeof nextBtn.click === "function") nextBtn.click()
+        this.simulateClick(nextBtn)
+        didNavigate = true
+        await this.sleep(200)
+      }
+    }
+
+    if (didNavigate) {
+      await this.sleep(250)
+    }
   }
 
   private async selectGeminiCanvasCodeTab(scope: ParentNode): Promise<boolean> {
     const codeTab = this.findGeminiCanvasCodeTab(scope)
     if (!codeTab) return false
     if (this.isGeminiCanvasCodeTabSelected(codeTab)) {
-      return this.waitForGeminiCanvasCodeSurface(scope, codeTab, 1500)
+      const ready = await this.waitForGeminiCanvasCodeSurface(scope, codeTab, 3000)
+      if (ready) await this.sleep(120)
+      return ready
     }
 
     const button = codeTab.querySelector(this.config.sitePrivateSelectors.canvasTabButton)
-    const target = button instanceof HTMLElement ? button : codeTab
+    const target =
+      button instanceof HTMLElement ||
+      (button && typeof (button as { click?: () => void }).click === "function")
+        ? (button as HTMLElement)
+        : codeTab
+
+    if (typeof target.click === "function") {
+      target.click()
+    }
     this.simulateClick(target)
 
-    return this.waitForGeminiCanvasCodeSurface(scope, codeTab, 1800)
+    const ready = await this.waitForGeminiCanvasCodeSurface(scope, codeTab, 8000)
+    if (ready) await this.sleep(150)
+    return ready
   }
 
   private async waitForGeminiCanvasCodeSurface(
@@ -4689,6 +5045,16 @@ export class GeminiAdapter extends SiteAdapter {
     const explicit = scope.querySelector(privateSelectors.canvasCodeTab)
     if (explicit instanceof HTMLElement) return explicit
 
+    const toggles = Array.from(scope.querySelectorAll(privateSelectors.canvasTabToggle)).filter(
+      (node): node is HTMLElement => node instanceof HTMLElement,
+    )
+    for (const toggle of toggles) {
+      const text = toggle.textContent?.trim() || ""
+      if (text.includes("代码") || /\bcode\b/i.test(text)) {
+        return toggle
+      }
+    }
+
     const groups = Array.from(scope.querySelectorAll(privateSelectors.canvasTabGroup))
     for (const group of groups) {
       if (
@@ -4698,12 +5064,12 @@ export class GeminiAdapter extends SiteAdapter {
         continue
       }
 
-      const toggles = Array.from(group.querySelectorAll(privateSelectors.canvasTabToggle)).filter(
-        (node): node is HTMLElement => node instanceof HTMLElement,
-      )
-      if (toggles.length >= 2) {
+      const groupToggles = Array.from(
+        group.querySelectorAll(privateSelectors.canvasTabToggle),
+      ).filter((node): node is HTMLElement => node instanceof HTMLElement)
+      if (groupToggles.length >= 2) {
         // Gemini app Canvas panel omits value attributes; its toolbar order is code, then preview.
-        return toggles[0]
+        return groupToggles[0]
       }
     }
 
@@ -4718,10 +5084,38 @@ export class GeminiAdapter extends SiteAdapter {
   }
 
   private hasGeminiCanvasCodeSurface(scope: ParentNode): boolean {
-    return (
-      this.findGeminiCanvasCodeBlock(scope) !== null ||
-      this.findGeminiCanvasCodeEditor(scope) !== null
-    )
+    const block = this.findGeminiCanvasCodeBlock(scope)
+    if (block && !block.closest("web-preview")) return true
+
+    const editor = this.findGeminiCanvasCodeEditor(scope)
+    if (editor && !editor.closest("web-preview")) {
+      const lines = editor.querySelectorAll(this.config.sitePrivateSelectors.canvasMonacoLine)
+      if (lines.length > 0) return true
+      const textarea = editor.querySelector(this.config.sitePrivateSelectors.canvasMonacoTextarea)
+      const hasTextareaValue =
+        typeof HTMLTextAreaElement !== "undefined"
+          ? textarea instanceof HTMLTextAreaElement && Boolean(textarea.value.trim())
+          : Boolean(
+              textarea &&
+                typeof (textarea as unknown as { value?: unknown }).value === "string" &&
+                (textarea as unknown as { value: string }).value.trim(),
+            )
+      if (hasTextareaValue) return true
+      const monaco = editor.querySelector(this.config.sitePrivateSelectors.canvasMonacoEditor)
+      if (monaco?.hasAttribute("data-uri")) return true
+    }
+
+    const monaco = scope.querySelector(this.config.sitePrivateSelectors.canvasMonacoEditor)
+    if (monaco && !monaco.closest("web-preview")) {
+      const lines = monaco.querySelectorAll(this.config.sitePrivateSelectors.canvasMonacoLine)
+      if (lines.length > 0) return true
+      if (monaco.hasAttribute("data-uri")) return true
+    }
+
+    const content = scope.querySelector(this.config.sitePrivateSelectors.canvasCodeContent)
+    if (content && !content.closest("web-preview") && content.textContent?.trim()) return true
+
+    return false
   }
 
   private async extractGeminiCanvasCodeArtifact(
@@ -4735,7 +5129,20 @@ export class GeminiAdapter extends SiteAdapter {
 
     const editor = this.findGeminiCanvasCodeEditor(scope)
     if (editor) {
-      return this.extractGeminiCanvasCodeEditorArtifact(editor, fallbackTitle)
+      const artifact = await this.extractGeminiCanvasCodeEditorArtifact(editor, fallbackTitle)
+      if (artifact) return artifact
+    }
+
+    const codeContentEl = scope.querySelector(this.config.sitePrivateSelectors.canvasCodeContent)
+    if (codeContentEl instanceof HTMLElement && !codeContentEl.closest("web-preview")) {
+      const code = this.normalizeGeminiCanvasCode(this.extractTextWithLineBreaks(codeContentEl))
+      if (code) {
+        return {
+          title: this.extractGeminiCanvasTitle(codeContentEl, fallbackTitle),
+          language: this.extractGeminiCanvasCodeLanguage(codeContentEl) || "text",
+          code,
+        }
+      }
     }
 
     return null
@@ -4743,25 +5150,42 @@ export class GeminiAdapter extends SiteAdapter {
 
   private findGeminiCanvasCodeBlock(scope: ParentNode): HTMLElement | null {
     const selector = this.config.sitePrivateSelectors.canvasCodeBlock
-    if (scope instanceof HTMLElement && scope.matches(selector)) {
+    if (
+      typeof HTMLElement !== "undefined" &&
+      scope instanceof HTMLElement &&
+      scope.matches(selector)
+    ) {
       return scope
     }
 
     const block = scope.querySelector(selector)
-    return block instanceof HTMLElement ? block : null
+    return block as HTMLElement | null
   }
 
   private findGeminiCanvasCodeEditor(scope: ParentNode): HTMLElement | null {
     const privateSelectors = this.config.sitePrivateSelectors
-    if (scope instanceof HTMLElement && scope.matches(privateSelectors.canvasCodeEditor)) {
+    if (
+      typeof HTMLElement !== "undefined" &&
+      scope instanceof HTMLElement &&
+      scope.matches(privateSelectors.canvasCodeEditor)
+    ) {
       return scope.matches(privateSelectors.canvasHidden) ? null : scope
     }
 
     const editor = scope.querySelector(privateSelectors.canvasCodeEditor)
-    if (!(editor instanceof HTMLElement) || editor.matches(privateSelectors.canvasHidden)) {
-      return null
+    if (editor && !editor.matches(privateSelectors.canvasHidden)) {
+      return editor as HTMLElement
     }
-    return editor
+
+    const monaco = scope.querySelector(privateSelectors.canvasMonacoEditor)
+    if (monaco && !monaco.matches(privateSelectors.canvasHidden)) {
+      const container = monaco.closest<HTMLElement>(
+        '.code-editor, [data-test-id="code-editor"], xap-code-editor, .monaco-editor',
+      )
+      return container || (monaco as HTMLElement)
+    }
+
+    return null
   }
 
   private extractGeminiCanvasCodeBlockArtifact(
@@ -4785,28 +5209,52 @@ export class GeminiAdapter extends SiteAdapter {
     editor: HTMLElement,
     fallbackTitle: string,
   ): Promise<GeminiCanvasCodeArtifact | null> {
-    const code =
-      (await this.extractGeminiCanvasMainWorldMonacoCode(editor)) ||
-      this.extractGeminiCanvasMonacoModelCode(editor) ||
-      (await this.extractGeminiCanvasRenderedMonacoCode(editor))
+    let code = ""
+    let language = ""
+
+    const mainWorldResult = await this.extractGeminiCanvasMainWorldMonacoCode(editor)
+    if (mainWorldResult?.code) {
+      code = mainWorldResult.code
+      language = mainWorldResult.language || ""
+    }
+
+    if (!code) {
+      const modelResult = this.extractGeminiCanvasMonacoModelCode(editor)
+      if (modelResult?.code) {
+        code = modelResult.code
+        language = modelResult.language || ""
+      }
+    }
+
+    if (!code) {
+      code = await this.extractGeminiCanvasRenderedMonacoCode(editor)
+    }
 
     if (!code) return null
 
     return {
       title: this.extractGeminiCanvasTitle(editor, fallbackTitle),
-      language: this.extractGeminiCanvasCodeLanguage(editor) || "text",
+      language: language || this.extractGeminiCanvasCodeLanguage(editor) || "text",
       code,
     }
   }
 
-  private async extractGeminiCanvasMainWorldMonacoCode(editor: HTMLElement): Promise<string> {
-    if (!document.documentElement.hasAttribute("data-ophel-gemini-canvas-main")) return ""
+  private async extractGeminiCanvasMainWorldMonacoCode(
+    editor: HTMLElement,
+  ): Promise<{ code: string; language?: string } | null> {
+    const globalScope =
+      typeof window !== "undefined" ? window : (globalThis as unknown as Record<string, unknown>)
+    const unsafeWin = (globalScope as Record<string, unknown>).unsafeWindow
+    if (unsafeWin && typeof unsafeWin === "object") {
+      installGeminiCanvasCodeBridge(unsafeWin as Window)
+    }
 
-    const editorUri =
-      editor
-        .querySelector(this.config.sitePrivateSelectors.canvasMonacoEditor)
-        ?.getAttribute("data-uri") || ""
-    if (!editorUri) return ""
+    if (!document.documentElement?.hasAttribute?.("data-ophel-gemini-canvas-main")) return null
+
+    const monacoEl = editor.matches(this.config.sitePrivateSelectors.canvasMonacoEditor)
+      ? editor
+      : editor.querySelector(this.config.sitePrivateSelectors.canvasMonacoEditor)
+    const editorUri = monacoEl?.getAttribute("data-uri") || ""
 
     const requestId = `ophel-gemini-canvas-${Date.now()}-${Math.random().toString(36).slice(2)}`
 
@@ -4818,11 +5266,12 @@ export class GeminiAdapter extends SiteAdapter {
         window.removeEventListener("message", handleMessage)
       }
 
-      const finish = (code: string) => {
+      const finish = (code: string, language?: string) => {
         if (settled) return
         settled = true
         cleanup()
-        resolve(this.normalizeGeminiCanvasCode(code))
+        const normalized = this.normalizeGeminiCanvasCode(code)
+        resolve(normalized ? { code: normalized, language } : null)
       }
 
       const handleMessage = (event: MessageEvent) => {
@@ -4831,12 +5280,16 @@ export class GeminiAdapter extends SiteAdapter {
           type?: unknown
           requestId?: unknown
           code?: unknown
+          language?: unknown
         }
         if (data?.type !== GEMINI_CANVAS_CODE_RESPONSE_EVENT || data.requestId !== requestId) {
           return
         }
 
-        finish(typeof data.code === "string" ? data.code : "")
+        finish(
+          typeof data.code === "string" ? data.code : "",
+          typeof data.language === "string" ? data.language : undefined,
+        )
       }
 
       timeoutId = window.setTimeout(() => finish(""), GEMINI_CANVAS_CODE_REQUEST_TIMEOUT_MS)
@@ -4852,43 +5305,100 @@ export class GeminiAdapter extends SiteAdapter {
     })
   }
 
-  private extractGeminiCanvasMonacoModelCode(editor: HTMLElement): string {
-    const monacoWindow = window as typeof window & {
+  private extractGeminiCanvasMonacoModelCode(
+    editor: HTMLElement,
+  ): { code: string; language?: string } | null {
+    const globalScope = typeof window !== "undefined" ? window : (globalThis as any)
+    const monacoWindow = (
+      typeof (globalScope as any).unsafeWindow !== "undefined"
+        ? (globalScope as any).unsafeWindow
+        : globalScope
+    ) as typeof window & {
       monaco?: {
         editor?: {
           getModels?: () => unknown[]
+          getEditors?: () => unknown[]
         }
       }
     }
-    const models = monacoWindow.monaco?.editor?.getModels?.()
-    if (!models?.length) return ""
+    const monacoEditor = monacoWindow.monaco?.editor
+    if (!monacoEditor) return null
 
-    const editorUri =
-      editor
-        .querySelector(this.config.sitePrivateSelectors.canvasMonacoEditor)
-        ?.getAttribute("data-uri") || ""
+    const monacoEl = editor.matches(this.config.sitePrivateSelectors.canvasMonacoEditor)
+      ? editor
+      : editor.querySelector(this.config.sitePrivateSelectors.canvasMonacoEditor)
+    const editorUri = monacoEl?.getAttribute("data-uri") || ""
+
+    // 1. 优先尝试 getEditors()
+    const editors = Array.isArray(monacoEditor.getEditors?.()) ? monacoEditor.getEditors!() : []
+    for (const ed of editors) {
+      const candidate = ed as {
+        getModel?: () => {
+          getValue?: () => string
+          getLanguageId?: () => string
+          uri?: { toString?: () => string }
+        } | null
+      }
+      const model = candidate.getModel?.()
+      if (model && typeof model.getValue === "function") {
+        const uriStr = model.uri?.toString?.() || ""
+        if (!editorUri || uriStr === editorUri || uriStr.endsWith(editorUri)) {
+          const code = this.normalizeGeminiCanvasCode(model.getValue())
+          if (code) {
+            return { code, language: model.getLanguageId?.() || "" }
+          }
+        }
+      }
+    }
+
+    // 2. 回退到 getModels()
+    const models = monacoEditor.getModels?.()
+    if (!Array.isArray(models) || models.length === 0) return null
+
     const matchingModel = models.find((model) => {
       const candidate = model as { uri?: { toString?: () => string } }
-      return editorUri && candidate.uri?.toString?.() === editorUri
+      const uriStr = candidate.uri?.toString?.() || ""
+      return editorUri && (uriStr === editorUri || uriStr.endsWith(editorUri))
     })
-    const model = matchingModel || (models.length === 1 ? models[0] : null)
-    const getValue = (model as { getValue?: () => string } | null)?.getValue
-    if (typeof getValue !== "function") return ""
+    const model = (matchingModel || (models.length === 1 ? models[0] : null)) as {
+      getValue?: () => string
+      getLanguageId?: () => string
+    } | null
+    const getValue = model?.getValue
+    if (typeof getValue !== "function") return null
 
-    return this.normalizeGeminiCanvasCode(getValue.call(model))
+    const code = this.normalizeGeminiCanvasCode(getValue.call(model))
+    return code ? { code, language: model?.getLanguageId?.() || "" } : null
   }
 
   private async extractGeminiCanvasRenderedMonacoCode(editor: HTMLElement): Promise<string> {
-    const textarea = editor.querySelector(this.config.sitePrivateSelectors.canvasMonacoTextarea)
-    if (textarea instanceof HTMLTextAreaElement && textarea.value.trim()) {
-      return this.normalizeGeminiCanvasCode(textarea.value)
+    const textarea = editor.matches(this.config.sitePrivateSelectors.canvasMonacoTextarea)
+      ? editor
+      : editor.querySelector(this.config.sitePrivateSelectors.canvasMonacoTextarea)
+    const isTextarea =
+      typeof HTMLTextAreaElement !== "undefined"
+        ? textarea instanceof HTMLTextAreaElement
+        : Boolean(textarea && typeof (textarea as { value?: unknown }).value === "string")
+    if (
+      isTextarea &&
+      typeof (textarea as HTMLTextAreaElement).value === "string" &&
+      (textarea as HTMLTextAreaElement).value.trim()
+    ) {
+      return this.normalizeGeminiCanvasCode((textarea as HTMLTextAreaElement).value)
     }
 
-    const scrollable = editor.querySelector(this.config.sitePrivateSelectors.canvasMonacoScrollable)
+    // 初始先直接抓取当前已渲染的可见行作为基底保底
+    const initialLines = this.extractGeminiCanvasVisibleMonacoLines(editor)
+    const chunks: string[] = []
+    if (initialLines.length > 0) {
+      chunks.push(initialLines.join("\n"))
+    }
+
+    const scrollable = editor.matches(this.config.sitePrivateSelectors.canvasMonacoScrollable)
+      ? editor
+      : editor.querySelector(this.config.sitePrivateSelectors.canvasMonacoScrollable)
     if (!(scrollable instanceof HTMLElement)) {
-      return this.normalizeGeminiCanvasCode(
-        this.extractGeminiCanvasVisibleMonacoLines(editor).join("\n"),
-      )
+      return this.normalizeGeminiCanvasCode(this.mergeGeminiCanvasRenderedCodeChunks(chunks))
     }
 
     const originalScrollTop = scrollable.scrollTop
@@ -4896,9 +5406,18 @@ export class GeminiAdapter extends SiteAdapter {
     const contentHeight = this.getGeminiCanvasMonacoContentHeight(editor)
     const maxScrollTop = Math.max(contentHeight - viewportHeight, scrollable.scrollHeight, 0)
     const step = Math.max(Math.floor(viewportHeight * 0.8), 120)
-    const chunks: string[] = []
 
-    for (let scrollTop = 0; scrollTop <= maxScrollTop; scrollTop += step) {
+    const maxSteps = 60
+    let stepCount = 0
+    let lastLineCount = initialLines.length
+    let noNewLinesCount = 0
+
+    for (
+      let scrollTop = step;
+      scrollTop <= maxScrollTop && stepCount < maxSteps;
+      scrollTop += step
+    ) {
+      stepCount++
       scrollable.scrollTop = scrollTop
       scrollable.dispatchEvent(new Event("scroll", { bubbles: true }))
       await this.sleep(40)
@@ -4906,6 +5425,14 @@ export class GeminiAdapter extends SiteAdapter {
       const lines = this.extractGeminiCanvasVisibleMonacoLines(editor)
       if (lines.length > 0) {
         chunks.push(lines.join("\n"))
+      }
+
+      if (lines.length === lastLineCount) {
+        noNewLinesCount++
+        if (noNewLinesCount >= 2) break
+      } else {
+        noNewLinesCount = 0
+        lastLineCount = lines.length
       }
     }
 
@@ -4930,14 +5457,18 @@ export class GeminiAdapter extends SiteAdapter {
       editor.querySelectorAll(this.config.sitePrivateSelectors.canvasMonacoContentHeight),
     ).flatMap((element) => {
       if (!(element instanceof HTMLElement)) return []
+      if (element.classList.contains("lines-content")) return []
+      const pixelHeight = this.parseCssPixelValue(element.style.height)
+      const safePixelHeight = pixelHeight > 0 && pixelHeight < 200000 ? pixelHeight : 0
       return [
-        element.scrollHeight,
-        element.offsetHeight,
-        this.parseCssPixelValue(element.style.height),
+        element.scrollHeight < 200000 ? element.scrollHeight : 0,
+        element.offsetHeight < 200000 ? element.offsetHeight : 0,
+        safePixelHeight,
       ]
     })
 
-    return Math.max(...heightCandidates, 0)
+    const max = Math.max(...heightCandidates, 0)
+    return Math.min(max, 50000)
   }
 
   private mergeGeminiCanvasRenderedCodeChunks(chunks: string[]): string {
@@ -5101,6 +5632,19 @@ export class GeminiAdapter extends SiteAdapter {
 
     trigger.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" })
     await new Promise((resolve) => setTimeout(resolve, 50))
+
+    const openButton =
+      trigger.querySelector<HTMLElement>(
+        'gem-button.open-button button, button[aria-label*="在 Canvas 中打开"], button[aria-label*="Canvas" i], button.open-button, .open-button button, button',
+      ) || (trigger.matches("button, [role='button']") ? trigger : null)
+
+    if (openButton) {
+      this.simulateClick(openButton)
+      openButton.click()
+      if (await this.waitForDeepResearchAppDocumentElement()) return true
+    }
+
+    this.simulateClick(trigger)
     trigger.click()
     if (await this.waitForDeepResearchAppDocumentElement()) return true
 
@@ -5108,6 +5652,7 @@ export class GeminiAdapter extends SiteAdapter {
       ? trigger
       : trigger.querySelector(this.config.sitePrivateSelectors.canvasCard)
     if (card instanceof HTMLElement && card !== trigger) {
+      this.simulateClick(card)
       card.click()
       return this.waitForDeepResearchAppDocumentElement()
     }
@@ -5198,6 +5743,28 @@ export class GeminiAdapter extends SiteAdapter {
     const collectedElements = new Set<Element>()
     const root = this.getScrollContainer() || document
 
+    let reportContent = ""
+    if (documentElement && !collectedElements.has(documentElement)) {
+      const targetElement =
+        documentElement.closest("structured-content-container") ||
+        documentElement.querySelector("structured-content-container") ||
+        documentElement
+      const rawContent = this.extractAssistantResponseTextWithAssets(
+        targetElement,
+        collector,
+      ).trim()
+      if (rawContent) {
+        reportContent = collector
+          ? this.appendDeepResearchReportAssetLink(collector, rawContent)
+          : rawContent
+      }
+    }
+
+    const trigger = this.getDeepResearchAppDocumentTrigger()
+    const triggerResponse = trigger
+      ? trigger.closest(this.config.selectors.assistantResponse)
+      : null
+
     const messageElements = Array.from(
       root.querySelectorAll(
         [this.config.selectors.userQuery, this.config.selectors.assistantResponse].join(", "),
@@ -5208,13 +5775,27 @@ export class GeminiAdapter extends SiteAdapter {
       if (element.closest(privateSelectors.immersivePanel)) continue
 
       const role = element.matches(this.config.selectors.userQuery) ? "user" : "assistant"
-      const content =
-        role === "user"
-          ? (collector
-              ? await this.extractUserQueryExportContentWithResolvedAssets(element, collector)
-              : this.extractUserQueryExportContentWithAssets(element)
-            ).trim()
-          : this.extractDeepResearchAppAssistantResponseContent(element, collector).trim()
+      let content = ""
+
+      if (role === "user") {
+        content = (
+          collector
+            ? await this.extractUserQueryExportContentWithResolvedAssets(element, collector)
+            : this.extractUserQueryExportContentWithAssets(element)
+        ).trim()
+      } else {
+        const assistantText = this.extractDeepResearchAppAssistantResponseContent(
+          element,
+          collector,
+        ).trim()
+
+        if (reportContent && triggerResponse && element === triggerResponse) {
+          content = this.joinExportSections(assistantText, reportContent)
+          reportContent = ""
+        } else {
+          content = assistantText
+        }
+      }
 
       if (!content) continue
 
@@ -5222,14 +5803,14 @@ export class GeminiAdapter extends SiteAdapter {
       messages.push({ role, content })
     }
 
-    if (documentElement && !collectedElements.has(documentElement)) {
-      const content = this.extractAssistantResponseTextWithAssets(documentElement, collector).trim()
-      if (content) {
-        messages.push({
-          role: "assistant",
-          content: collector ? this.appendDeepResearchReportAssetLink(collector, content) : content,
-        })
+    if (reportContent) {
+      const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant")
+      if (lastAssistant) {
+        lastAssistant.content = this.joinExportSections(lastAssistant.content, reportContent)
+      } else {
+        messages.push({ role: "assistant", content: reportContent })
       }
+      reportContent = ""
     }
 
     return this.dedupeAdjacentExportMessages(messages)
@@ -5248,11 +5829,19 @@ export class GeminiAdapter extends SiteAdapter {
   ): Promise<ExportMessage[]> {
     const { messages, collectedElements } = await this.collectGeminiShareTurnMessages(collector)
 
-    this.collectDetachedDeepResearchArtifactMessages(collectedElements, collector).forEach(
-      (message) => {
-        messages.push(message)
-      },
+    const detachedMessages = this.collectDetachedDeepResearchArtifactMessages(
+      collectedElements,
+      collector,
     )
+    if (detachedMessages.length > 0) {
+      const detachedContent = detachedMessages.map((m) => m.content).join("\n\n")
+      const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant")
+      if (lastAssistant) {
+        lastAssistant.content = this.joinExportSections(lastAssistant.content, detachedContent)
+      } else {
+        messages.push(...detachedMessages)
+      }
+    }
 
     return this.dedupeAdjacentExportMessages(messages)
   }
@@ -5758,6 +6347,13 @@ export class GeminiAdapter extends SiteAdapter {
     options: { modelLockConfig?: { enabled: boolean; keyword: string } } = {},
   ): void {
     super.afterPropertiesSet(options)
+
+    const globalScope =
+      typeof window !== "undefined" ? window : (globalThis as unknown as Record<string, unknown>)
+    const unsafeWin = (globalScope as Record<string, unknown>).unsafeWindow
+    if (unsafeWin && typeof unsafeWin === "object") {
+      installGeminiCanvasCodeBridge(unsafeWin as Window)
+    }
 
     if (!this.myStuffEnhancer) {
       this.myStuffEnhancer = new GeminiMyStuffEnhancer({
