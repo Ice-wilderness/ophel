@@ -264,10 +264,12 @@ export const zhTW = {
   collapse: "收起",
   pinPanel: "固定面板",
   snapToEdge: "吸附到邊緣",
-  tip1: "長按 {modifier} 進入穿透模式，可穿透面板操作下方內容",
+  tip1: "長按 {modifier} 進入穿透模式，直接操作面板下方的內容",
 
-  tip3: "按 {shortcut} 查看全部快捷鍵",
-  tip4: "{shortcut} 開啟全域搜尋，支援 folder: tag: level: 語法",
+  tip3: "按 {shortcut} 檢視{link}",
+  tip4: "{shortcut} 開啟{link}，快速查找所有內容",
+  tipGlobalSearchLink: "全域搜尋",
+  tipShortcutsLink: "全部快捷鍵",
   tip5: "在{sitePacks}安裝適配包，讓 Ophel 支援更多 AI 站點",
   tip6: "{shortcut} 在大綱標題間快速跳轉",
   copy: "複製",
@@ -678,6 +680,7 @@ export const zhTW = {
   // 大綱功能
   tabOutline: "大綱",
   outlineEmpty: "暫無大綱內容",
+  outlineReleaseBanner: "已更新到 v{version}，看看有什麼新內容",
   outlineEmptyDescDefault: "開始對話後將自動生成大綱",
   outlineEmptyDescUserQueryOnly: "目前僅顯示用戶提問，發送訊息後將出現大綱內容",
   outlineCopyFull: "複製大綱",

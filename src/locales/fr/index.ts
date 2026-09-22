@@ -377,8 +377,10 @@ export const fr = {
   snapToEdge: "Ancrer au bord",
   tip1: "Maintenez {modifier} pour le mode transparent et interagir avec le contenu en dessous",
 
-  tip3: "{shortcut} affiche tous les raccourcis clavier",
-  tip4: "{shortcut} ouvre la recherche globale (syntaxe folder: tag: level:)",
+  tip3: "{shortcut} affiche {link}",
+  tip4: "{shortcut} ouvre {link} pour tout trouver",
+  tipGlobalSearchLink: "la recherche globale",
+  tipShortcutsLink: "tous les raccourcis clavier",
   tip5: "Installez des packs dans {sitePacks} pour utiliser Ophel sur plus de sites d'IA",
   tip6: "{shortcut} navigue entre les titres du plan",
   edit: "Modifier",
@@ -817,6 +819,7 @@ export const fr = {
   notificationBody: "Cliquez pour voir le résultat",
   tabOutline: "Sommaire",
   outlineEmpty: "Aucun contenu",
+  outlineReleaseBanner: "Mis à jour vers v{version} — découvrez les nouveautés",
   outlineEmptyDescDefault: "Les éléments du sommaire apparaîtront au fil de la conversation.",
   outlineEmptyDescUserQueryOnly:
     "Seules les questions utilisateur sont affichées pour le moment. Envoyez un message pour générer le sommaire.",

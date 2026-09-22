@@ -421,10 +421,12 @@ export const zhCN = {
   collapse: "收起",
   pinPanel: "固定面板",
   snapToEdge: "吸附到边缘",
-  tip1: "长按 {modifier} 进入穿透模式，可穿透面板操作下方内容",
+  tip1: "长按 {modifier} 进入穿透模式，直接操作面板下方的内容",
 
-  tip3: "按 {shortcut} 查看全部快捷键",
-  tip4: "{shortcut} 打开全局搜索，支持 folder: tag: level: 语法",
+  tip3: "按 {shortcut} 查看{link}",
+  tip4: "{shortcut} 打开{link}，快速查找所有内容",
+  tipGlobalSearchLink: "全局搜索",
+  tipShortcutsLink: "全部快捷键",
   tip5: "在{sitePacks}安装适配包，让 Ophel 支持更多 AI 站点",
   tip6: "{shortcut} 在大纲标题间快速跳转",
   copy: "复制",
@@ -793,6 +795,7 @@ export const zhCN = {
   // 大纲功能
   tabOutline: "大纲",
   outlineEmpty: "暂无大纲内容",
+  outlineReleaseBanner: "已更新到 v{version}，看看有什么新内容",
   outlineEmptyDescDefault: "开始对话后将自动生成大纲",
   outlineEmptyDescUserQueryOnly: "当前仅显示用户提问，发送消息后将出现大纲内容",
   outlineCopyFull: "复制大纲",

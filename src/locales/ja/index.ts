@@ -379,8 +379,10 @@ export const ja = {
   snapToEdge: "端にスナップ",
   tip1: "{modifier} を長押しで透過モード、パネルの下のコンテンツを操作可能",
 
-  tip3: "{shortcut} で全ショートカットを表示",
-  tip4: "{shortcut} でグローバル検索（folder: tag: level: 構文対応）",
+  tip3: "{shortcut} で{link}を表示",
+  tip4: "{shortcut} で{link}ですべてを検索",
+  tipGlobalSearchLink: "グローバル検索",
+  tipShortcutsLink: "全ショートカット",
   tip5: "{sitePacks}からインストールして、さらに多くのAIサイトでOphelを使えます",
   tip6: "{shortcut} でアウトラインの見出し間を移動",
   edit: "編集",
@@ -825,6 +827,7 @@ export const ja = {
   notificationBody: "クリックして結果を確認してください",
   tabOutline: "目次",
   outlineEmpty: "目次データがありません",
+  outlineReleaseBanner: "v{version} に更新 — 新機能をチェック",
   outlineEmptyDescDefault: "会話が進むと目次項目が自動で表示されます。",
   outlineEmptyDescUserQueryOnly:
     "現在はユーザーの質問のみ表示中です。メッセージ送信後に目次項目が表示されます。",
