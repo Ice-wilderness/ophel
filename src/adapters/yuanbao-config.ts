@@ -84,7 +84,7 @@ export interface YuanbaoSiteConfig extends BuiltinSiteConfig {
 }
 
 /** 内置修复修改默认配置时必须递增，使旧缓存 patch 自动失效。 */
-export const YUANBAO_CONFIG_VERSION = 2
+export const YUANBAO_CONFIG_VERSION = 3
 
 const createYuanbaoConfig = (): YuanbaoSiteConfig => {
   const inputContainer = ".agent-dialogue__content--common__input"
@@ -264,6 +264,7 @@ const createYuanbaoConfig = (): YuanbaoSiteConfig => {
 
   return {
     capabilities: [...BUILTIN_FEATURE_CAPABILITIES[SITE_IDS.YUANBAO]],
+    traits: { historyLazyLoad: false },
     selectors: {
       textarea: [textarea],
       submitButton: [submitButton],

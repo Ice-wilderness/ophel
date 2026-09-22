@@ -179,7 +179,7 @@ interface ClaudeOutlineCacheEntry {
 }
 
 export class ClaudeAdapter extends SiteAdapter {
-  private config: ClaudeSiteConfig = CLAUDE_CONFIG
+  protected config: ClaudeSiteConfig = CLAUDE_CONFIG
   private activeOrganizationId: string | null = null
   private activeOrganizationIdExpiresAt = 0
   private exportDocumentCache: ClaudeDocumentExportCacheEntry[] = []
@@ -1083,11 +1083,6 @@ export class ClaudeAdapter extends SiteAdapter {
     }
 
     return null
-  }
-
-  /** 会话全量加载，无服务端历史懒加载 */
-  needsHistoryLazyLoad(): boolean {
-    return false
   }
 
   getScrollContainer(): HTMLElement | null {
@@ -2157,6 +2152,7 @@ export class ClaudeAdapter extends SiteAdapter {
     return headings[entry.orderInMessage - 1] || null
   }
 
+  // 动态判定：仅虚拟化长对话需要轮询兜底，无法静态声明为 traits 字段
   usesPeriodicOutlineRefreshFallback(): boolean {
     return this.isClaudeVirtualConversation()
   }

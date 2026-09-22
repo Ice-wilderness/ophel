@@ -4,7 +4,6 @@
  * 每个支持的站点（Gemini/ChatGPT/Claude 等）需要继承此类并实现抽象方法
  */
 
-import { SITE_IDS } from "~constants/defaults"
 import type { MarkdownFixerConfig } from "~core/markdown-fixer"
 import { extractConversationTitleFromDocumentTitle } from "~utils/conversation-title"
 import { DOMToolkit } from "~utils/dom-toolkit"
@@ -14,6 +13,7 @@ import { t } from "~utils/i18n"
 import { createSiteInstanceKey } from "~utils/site-identity"
 import type { ExportPackaging } from "~utils/storage"
 
+import type { BuiltinSiteConfig, SiteTraits } from "./declarative/types"
 import { getBuiltinFeatureCapabilities, type SitePackCapability } from "./feature-capabilities"
 
 // ==================== 类型定义 ====================
@@ -421,7 +421,11 @@ export function findAssistantMermaidBlocks(
 
 export abstract class SiteAdapter {
   protected textarea: HTMLElement | null = null
-  protected _cachedFlutterScrollContainer: HTMLElement | null = null
+  /**
+   * 站点配置；内置站点在子类中声明并赋默认值，站点包适配器不经过该字段
+   * （其特征声明来自 manifest，见 DeclarativeAdapter.getSiteTraits）。
+   */
+  protected config?: BuiltinSiteConfig
   private networkGenerationActive = false
 
   // ==================== 必须实现的方法 ====================
@@ -729,6 +733,8 @@ export abstract class SiteAdapter {
   /**
    * 是否由子类提供了站点专用主题切换逻辑。
    * 用于避免在自定义切换后再次套用通用 fallback，造成宿主页面状态冲突。
+   * 注意：这是“子类是否覆写了 toggleTheme”的静态派生判断，不是运行时状态查询；
+   * 前缀 has 仅因方法名冻结保留，新代码不要仿照此前缀声明静态特征。
    */
   hasCustomToggleTheme(): boolean {
     return this.toggleTheme !== SiteAdapter.prototype.toggleTheme
@@ -940,37 +946,7 @@ export abstract class SiteAdapter {
     for (const selector of selectors) {
       const container = document.querySelector(selector) as HTMLElement
       if (container && container.scrollHeight > container.clientHeight) {
-        this._cachedFlutterScrollContainer = null
         return container
-      }
-    }
-
-    // 检查缓存的 Flutter 容器是否仍然有效
-    if (this._cachedFlutterScrollContainer && this._cachedFlutterScrollContainer.isConnected) {
-      return this._cachedFlutterScrollContainer
-    }
-
-    // 尝试在 iframe 中查找（Gemini 图文并茂模式专用）
-    // 只在 Gemini 普通版站点遍历 iframe，其他站点跳过以避免跨域警告
-    if (this.getSiteId() === SITE_IDS.GEMINI) {
-      const iframes = document.querySelectorAll('iframe[sandbox*="allow-same-origin"]')
-      for (const iframe of Array.from(iframes)) {
-        try {
-          const iframeDoc =
-            (iframe as HTMLIFrameElement).contentDocument ||
-            (iframe as HTMLIFrameElement).contentWindow?.document
-          if (iframeDoc) {
-            const scrollContainer = iframeDoc.querySelector(
-              'flt-semantics[style*="overflow-y: scroll"]:not([style*="overflow-x: scroll"])',
-            ) as HTMLElement
-            if (scrollContainer && scrollContainer.scrollHeight > scrollContainer.clientHeight) {
-              this._cachedFlutterScrollContainer = scrollContainer
-              return scrollContainer
-            }
-          }
-        } catch (e) {
-          console.warn("[Ophel] Failed to access iframe:", (e as Error).message)
-        }
       }
     }
 
@@ -978,15 +954,23 @@ export abstract class SiteAdapter {
   }
 
   /**
+   * 站点静态结构/加载特征声明（`*-config.ts` 的 `traits` 字段；站点包为
+   * `manifest.traits`）。新增特征优先扩展 SiteTraits，不再新增布尔方法。
+   */
+  protected getSiteTraits(): SiteTraits {
+    return this.config?.traits ?? {}
+  }
+
+  /**
    * 会话历史是否随向上滚动从服务端懒加载（Gemini、千问、Qwen Studio 等）。
    *
-   * 全量渲染或仅前端虚拟滚动的站点覆盖为 false：去顶部/阅读恢复可直接
-   * 滚动到位，跳过 HistoryLoader 的固定轮询等待（每轮约 1.2s）。
-   * 默认 true 保持保守：未确认的站点维持原有加载行为，避免去顶部停在
-   * 未加载的历史中段。
+   * 全量渲染或仅前端虚拟滚动的站点在 config `traits.historyLazyLoad` 声明
+   * false：去顶部/阅读恢复可直接滚动到位，跳过 HistoryLoader 的固定轮询
+   * 等待（每轮约 1.2s）。缺省 true 保持保守：未确认的站点维持原有加载
+   * 行为，避免去顶部停在未加载的历史中段。
    */
   needsHistoryLazyLoad(): boolean {
-    return true
+    return this.getSiteTraits().historyLazyLoad ?? true
   }
 
   /** 获取当前视口中可见的锚点元素信息 */
@@ -1315,7 +1299,7 @@ export abstract class SiteAdapter {
    * 用于决定是否需要延迟处理（等待 Shadow DOM 渲染）
    */
   usesShadowDOM(): boolean {
-    return false
+    return this.getSiteTraits().shadowDOM ?? false
   }
 
   /** 从页面提取大纲 */
@@ -1346,9 +1330,11 @@ export abstract class SiteAdapter {
    * Some virtualized/lazy-mounted conversation views do not reliably emit DOM
    * mutations when distant messages mount. Opt in only for sites that need a
    * periodic outline refresh fallback while the outline is active.
+   * 静态站点在 config `traits.periodicOutlineRefresh` 声明；运行时才可判定的
+   * 站点（如 Claude）保留方法覆写。
    */
   usesPeriodicOutlineRefreshFallback(): boolean {
-    return false
+    return this.getSiteTraits().periodicOutlineRefresh ?? false
   }
 
   getOutlineSourcesSignature(): string {
@@ -1504,9 +1490,11 @@ export abstract class SiteAdapter {
    * Whether the site renders messages in reverse DOM order (e.g.
    * flex-col-reverse). When true, the export pipeline reverses turn
    * order so exported messages follow visual (oldest-first) order.
+   * 声明字段为 config 顶层 `outlineReverse`（名词式，与站点包 JSON 一致）；
+   * 站点包适配器经 DeclarativeAdapter 覆写读取 manifest 同名字段。
    */
   isExportReversed(): boolean {
-    return false
+    return this.config?.outlineReverse ?? false
   }
 
   /**

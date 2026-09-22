@@ -92,7 +92,7 @@ export interface KimiSiteConfig extends BuiltinSiteConfig {
 }
 
 /** 内置修复修改默认配置时必须递增，使旧缓存 patch 自动失效。 */
-export const KIMI_CONFIG_VERSION = 2
+export const KIMI_CONFIG_VERSION = 3
 
 const createKimiConfig = (): KimiSiteConfig => {
   const sidebarConversation = "a.chat-info-item, a.next-sidebar-history-item__link"
@@ -151,6 +151,7 @@ const createKimiConfig = (): KimiSiteConfig => {
 
   return {
     capabilities: [...BUILTIN_FEATURE_CAPABILITIES[SITE_IDS.KIMI]],
+    traits: { historyLazyLoad: false },
     selectors: {
       textarea: [
         '.chat-input-editor[data-lexical-editor="true"]',

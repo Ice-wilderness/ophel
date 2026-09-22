@@ -125,7 +125,7 @@ interface AIStudioOutlineSortEntry {
 }
 
 export class AIStudioAdapter extends SiteAdapter {
-  private config: AIStudioSiteConfig = AISTUDIO_CONFIG
+  protected config: AIStudioSiteConfig = AISTUDIO_CONFIG
 
   // ==================== 缓存属性 ====================
 
@@ -477,11 +477,6 @@ export class AIStudioAdapter extends SiteAdapter {
   }
 
   // ==================== 滚动容器 ====================
-
-  /** 会话历史已全部在客户端（仅渲染虚拟化），无服务端历史懒加载 */
-  needsHistoryLazyLoad(): boolean {
-    return false
-  }
 
   getScrollContainer(): HTMLElement | null {
     for (const selector of this.config.selectors.scrollContainer) {

@@ -101,7 +101,7 @@ interface GrokShareResponseItem {
 }
 
 export class GrokAdapter extends SiteAdapter {
-  private config: GrokSiteConfig = GROK_CONFIG
+  protected config: GrokSiteConfig = GROK_CONFIG
 
   match(): boolean {
     // 匹配 grok.com 独立站点
@@ -1384,11 +1384,6 @@ export class GrokAdapter extends SiteAdapter {
   }
 
   // ==================== 滚动容器 ====================
-
-  /** 会话全量加载，无服务端历史懒加载 */
-  needsHistoryLazyLoad(): boolean {
-    return false
-  }
 
   getScrollContainer(): HTMLElement | null {
     // 主内容区域的滚动容器
