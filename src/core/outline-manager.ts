@@ -5,7 +5,12 @@ import { useBookmarkStore, type Bookmark } from "~stores/bookmarks-store"
 import { useSettingsStore } from "~stores/settings-store"
 import { showToast } from "~utils/toast"
 import { t } from "~utils/i18n"
-import { EVENT_MONITOR_COMPLETE, EVENT_MONITOR_START } from "~utils/messaging"
+import {
+  EVENT_MONITOR_COMPLETE,
+  EVENT_MONITOR_START,
+  EVENT_OUTLINE_DATA_UPDATED,
+  EVENT_OUTLINE_JUMP_COMPLETED,
+} from "~utils/messaging"
 import { signalReadingHistoryUserNavigation } from "~utils/reading-history-navigation"
 
 type ExtendedOutlineItem = OutlineItem & {
@@ -134,6 +139,9 @@ export class OutlineManager {
   // Global refresh debounce (防止多处同时触发时的重复执行)
   private refreshDebounceTimer: ReturnType<typeof setTimeout> | null = null
   private readonly REFRESH_DEBOUNCE_MS = 300
+  // 程序化跳转后的错峰刷新节奏（与 handleUrlChange 同理）：虚拟滚动站点的
+  // DOM 换挂载是异步的，单次过早 refresh 会抽到旧 DOM 且因文本未变静默跳过
+  private readonly JUMP_REFRESH_DELAYS = [80, 250, 600, 1200]
 
   // 设置变更回调
   private onExpandLevelChange?: (level: number) => void
@@ -264,8 +272,34 @@ export class OutlineManager {
   private routeChangeVersion = 0
 
   private handleMessage(event: MessageEvent) {
-    if (event.source !== window) return
     const { type } = event.data || {}
+
+    // 油猴沙箱中 event.source 可能是代理对象而非 window 本身（与 network-monitor
+    // 的放宽校验一致）；这两类事件仅触发一次刷新，无安全风险，按类型放行
+    if (type === EVENT_OUTLINE_DATA_UPDATED) {
+      // 适配器从站外数据源（如 DeepSeek 历史消息接口）补齐了大纲数据
+      if (this.isActive) {
+        this.refresh()
+      }
+      return
+    }
+
+    if (type === EVENT_OUTLINE_JUMP_COMPLETED) {
+      // 程序化跳转完成后错峰刷新：仅当树里存在未挂载且无缓存位置的条目
+      // （虚拟滚动 + 外部数据回填）才有意义，普通站点不受影响。
+      // 必须用 immediate 绕过全局防抖，否则多次探测会被合并成一次过早的扫描
+      if (this.isActive && this.hasPositionlessOutlineNodes()) {
+        for (const delay of this.JUMP_REFRESH_DELAYS) {
+          setTimeout(() => {
+            if (this.destroyed || !this.isActive) return
+            this.refresh(undefined, true)
+          }, delay)
+        }
+      }
+      return
+    }
+
+    if (event.source !== window) return
 
     if (type === EVENT_MONITOR_START) {
       if (this.settings.autoUpdate) {
@@ -1809,6 +1843,17 @@ export class OutlineManager {
 
   findMountedActiveItemIndex(scrollContainer: HTMLElement): number | null {
     return this.findMountedActiveNode(scrollContainer)?.index ?? null
+  }
+
+  // 树里是否存在既未挂载又无缓存滚动位置的回填条目。仅限声明了
+  // traits.virtualOutlineFill 的虚拟滚动站点（DeepSeek API 回填大纲）；
+  // ChatGPT/Claude/豆包的缓存回填条目不声明该特征，恒为 false，
+  // 用于把跳转后的即时刷新和高亮重算限定在真正需要它的场景
+  hasPositionlessOutlineNodes(): boolean {
+    if (!this.siteAdapter.usesVirtualOutlineFill()) return false
+    return this.flatNodes.some(
+      (node) => !node.isGhost && !node.element && typeof node.scrollTop !== "number",
+    )
   }
 
   findMountedActiveNode(scrollContainer: HTMLElement): OutlineNode | null {

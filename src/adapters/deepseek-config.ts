@@ -63,7 +63,7 @@ export interface DeepSeekSiteConfig extends BuiltinSiteConfig {
 }
 
 /** 内置修复修改默认配置时必须递增，使旧缓存 patch 自动失效。 */
-export const DEEPSEEK_CONFIG_VERSION = 4
+export const DEEPSEEK_CONFIG_VERSION = 5
 
 const createDeepSeekConfig = (): DeepSeekSiteConfig => {
   const conversationLink = 'a[href*="/a/chat/s/"]'
@@ -118,7 +118,7 @@ const createDeepSeekConfig = (): DeepSeekSiteConfig => {
 
   return {
     capabilities: [...BUILTIN_FEATURE_CAPABILITIES[SITE_IDS.DEEPSEEK]],
-    traits: { historyLazyLoad: false },
+    traits: { historyLazyLoad: false, virtualOutlineFill: true },
     selectors: {
       textarea: [
         'textarea[placeholder*="DeepSeek"]',
