@@ -25,6 +25,7 @@ import { hashOutlineText, stripMarkdownInline } from "~utils/outline-heading-cac
 
 import {
   SiteAdapter,
+  type AnchorData,
   type ConversationDeleteTarget,
   type ConversationInfo,
   type ConversationObserverConfig,
@@ -44,13 +45,19 @@ import {
 import {
   parseDeepSeekHistoryOutline,
   type DeepSeekHistoryOutlineData,
-} from "~utils/deepseek-history-outline"
+} from "./deepseek-history-outline"
 import {
   isApiOutlineStale,
   mergeByBranchMessageOrder,
   shouldAttemptApiOutlineFetch,
 } from "~utils/outline-api-source"
-import { parseDeepSeekHistoryExport } from "~utils/deepseek-history-export"
+import { parseDeepSeekHistoryExport } from "./deepseek-history-export"
+import {
+  alignScrollTop,
+  isDeepSeekVirtualEdgeSettled,
+  settleVirtualScroll,
+  waitForVirtualScrollQuiet,
+} from "~utils/virtual-scroll-settle"
 import type { BuiltinSiteConfig } from "./declarative"
 
 const CHAT_PATH_PATTERN = /\/a\/chat\/s\/([a-z0-9-]+)/i
@@ -451,6 +458,169 @@ export class DeepSeekAdapter extends SiteAdapter {
       ),
     ).filter((element) => !element.closest(".gh-root, .gh-table-container"))
     return this.pickBestScrollableAncestor(fallbackRoots)
+  }
+
+  override async waitForVirtualListEdge(
+    edge: "start" | "end",
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    return settleVirtualScroll(
+      () => this.getScrollContainer(),
+      (container) => isDeepSeekVirtualEdgeSettled(container, edge),
+      (container) => alignScrollTop(container, edge === "start" ? 0 : container.scrollHeight),
+      signal,
+    )
+  }
+
+  override isVirtualScrollConversation(): boolean {
+    const container = this.getScrollContainer()
+    if (!container) return false
+    return container.querySelector("[data-virtual-list-item-key]") !== null
+  }
+
+  override getVirtualAnchorElement(): AnchorData | null {
+    if (!this.isVirtualScrollConversation()) return null
+    const container = this.getScrollContainer()
+    if (!container) return null
+    const rows = this.readMountedVirtualRows(container)
+    if (!rows.length) return null
+
+    // 视口上沿那条已挂载的行；readMountedVirtualRows 的 top 是视口坐标，
+    // translateY 位移已包含在内
+    const containerRect = container.getBoundingClientRect()
+    const viewportLine = containerRect.top + 100
+    let best: { key: number; top: number } | null = null
+    for (const row of rows) {
+      if (row.top <= viewportLine && (!best || row.top > best.top)) {
+        best = row
+      }
+    }
+    if (!best) best = rows[0]
+
+    const element = container.querySelector(`[data-virtual-list-item-key="${best.key}"]`)
+    if (!element) return null
+
+    const rowTop = best.top - containerRect.top + container.scrollTop
+    return {
+      type: "virtual-row",
+      rowKey: best.key,
+      offset: container.scrollTop - rowTop,
+      textSignature: (element.textContent || "").trim().substring(0, 50),
+    }
+  }
+
+  override async restoreVirtualAnchor(anchor: AnchorData, signal?: AbortSignal): Promise<boolean> {
+    if (anchor.type !== "virtual-row" || typeof anchor.rowKey !== "number") return false
+    const rowKey = anchor.rowKey
+    const offset = anchor.offset || 0
+
+    // 虚拟窗口的挂载晚于会话 id 就绪，冷加载可能要数秒，有界等待其出现；
+    // 期间用户主动滚动会通过 signal 中止等待
+    const deadline = Date.now() + 10000
+    while (!this.isVirtualScrollConversation()) {
+      if (signal?.aborted) return false
+      if (Date.now() >= deadline) {
+        console.warn("[Ophel] Reading history restore skipped: DeepSeek message list not ready")
+        return false
+      }
+      await this.sleep(100)
+    }
+
+    const container = this.getScrollContainer()
+    if (!container) return false
+
+    // 等站点自己的开场滚动（自动去底部、渲染引发的调整）安静下来再动手，
+    // 否则恢复期间会被站点反复拽走，永远无法落定
+    const quiet = await waitForVirtualScrollQuiet(() => this.getScrollContainer(), signal)
+    if (signal?.aborted) return false
+    if (!quiet) {
+      console.warn("[Ophel] Reading history restore skipped: DeepSeek page kept scrolling")
+      return false
+    }
+
+    // 复用大纲跳转的探测闭环：按 message_id 把目标行挂出来；
+    // 有大纲接口缓存数据时传入，分支序号距离比 id 差值更准
+    const apiData = this.apiOutlineData
+    const outlineData = apiData && apiData.sessionId === this.getSessionId() ? apiData : null
+    const row = await this.probeMountVirtualRow(rowKey, container, outlineData, null, signal)
+    if (signal?.aborted) return false
+    if (!row) {
+      console.warn("[Ophel] Reading history restore skipped: DeepSeek message not found", rowKey)
+      return false
+    }
+
+    // key 是服务端 message_id，天然稳定；文本签名兜底防极端错位
+    if (anchor.textSignature) {
+      const current = (row.textContent || "").trim().substring(0, 50)
+      if (current !== anchor.textSignature) {
+        console.warn(
+          "[Ophel] Reading history restore skipped: DeepSeek message content changed",
+          rowKey,
+        )
+        return false
+      }
+    }
+
+    const findRow = (c: HTMLElement) => c.querySelector(`[data-virtual-list-item-key="${rowKey}"]`)
+    const docTop = (c: HTMLElement, el: Element) => {
+      const cRect = c.getBoundingClientRect()
+      const rRect = el.getBoundingClientRect()
+      return rRect.top - cRect.top + c.scrollTop
+    }
+
+    // 落定判定用「行相对容器顶部的视觉位置」而不是 scrollTop 像素：刷新后页面仍在
+    // 渲染，文档高度在漂，像素值几秒内稳定不下来；视觉位置才是保存 offset 的本义
+    const samples: string[] = []
+    let lastAlignedTop: number | null = null
+    const isAligned = (c: HTMLElement) => {
+      const target = findRow(c)
+      if (!target) {
+        samples.push("row-unmounted")
+        return false
+      }
+      const visualOffset = target.getBoundingClientRect().top - c.getBoundingClientRect().top
+      samples.push(`vo=${Math.round(visualOffset + offset)} st=${Math.round(c.scrollTop)}`)
+      return Math.abs(visualOffset + offset) <= 24
+    }
+    const settled = await settleVirtualScroll(
+      () => this.getScrollContainer(),
+      isAligned,
+      (c) => {
+        // 上一拍对准之后 scrollTop 又被改动：站点自己的滚动在与恢复竞争
+        if (lastAlignedTop !== null && Math.abs(c.scrollTop - lastAlignedTop) > 2) {
+          samples.push(`external-scroll=${Math.round(c.scrollTop)}`)
+        }
+        const target = findRow(c)
+        if (target) {
+          alignScrollTop(c, docTop(c, target) + offset)
+          lastAlignedTop = c.scrollTop
+        }
+      },
+      signal,
+      { timeoutMs: 4000 },
+    )
+    if (settled || signal?.aborted) return settled
+
+    // 收敛失败但行仍在目标附近（渲染抖动导致始终差几像素）则接受现状；
+    // 行已不在 DOM（被站点拽走）才算失败
+    const finalContainer = this.getScrollContainer()
+    const finalRow = finalContainer ? findRow(finalContainer) : null
+    if (finalContainer && finalRow) {
+      const visualOffset =
+        finalRow.getBoundingClientRect().top - finalContainer.getBoundingClientRect().top
+      if (Math.abs(visualOffset + offset) <= 240) {
+        console.warn(
+          "[Ophel] Reading history restore accepted with loose alignment",
+          samples.slice(-12),
+        )
+        return true
+      }
+    }
+    console.warn(
+      "[Ophel] Reading history restore incomplete: DeepSeek scroll did not settle",
+      samples.slice(-12),
+    )
+    return false
   }
 
   getResponseContainerSelector(): string {
@@ -1025,7 +1195,8 @@ export class DeepSeekAdapter extends SiteAdapter {
     messageId: number,
     container: HTMLElement,
     data: DeepSeekHistoryOutlineData | null,
-    requestId: number,
+    requestId: number | null,
+    signal?: AbortSignal,
   ): Promise<Element | null> {
     if (container.scrollHeight <= container.clientHeight) return null
 
@@ -1042,7 +1213,9 @@ export class DeepSeekAdapter extends SiteAdapter {
     for (let attempt = 0; attempt < VIRTUAL_ROW_PROBE_MAX_ATTEMPTS; attempt += 1) {
       const existing = findRow()
       if (existing) return existing
-      if (requestId !== this.nativeOutlineRevealRequestId) return null
+      // requestId 为 null 表示非大纲链路调用（阅读历史恢复），不参与大纲请求失效判断
+      if (requestId !== null && requestId !== this.nativeOutlineRevealRequestId) return null
+      if (signal?.aborted) return null
 
       const rows = this.readMountedVirtualRows(container)
       if (rows.length === 0) return null
@@ -1093,6 +1266,59 @@ export class DeepSeekAdapter extends SiteAdapter {
       container.dispatchEvent(new Event("scroll", { bubbles: true }))
       // 强制同步 layout，促使虚拟列表本轮完成重挂载
       container.getBoundingClientRect()
+    }
+
+    return this.bisectMountVirtualRow(messageId, container, findRow, requestId, signal)
+  }
+
+  /**
+   * probeMountVirtualRow 的兜底：启发式逼近依赖行高估算，id 空洞或行高不均时
+   * 会过冲震荡。挂载窗口的 key 区间随 scrollTop 单调移动，二分不依赖行高，
+   * 对长对话 log 级收敛。
+   */
+  private async bisectMountVirtualRow(
+    messageId: number,
+    container: HTMLElement,
+    findRow: () => Element | null,
+    requestId: number | null,
+    signal?: AbortSignal,
+  ): Promise<Element | null> {
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight)
+    let lo = 0
+    let hi = maxScroll
+    let mid = Math.min(maxScroll, Math.max(0, container.scrollTop))
+
+    for (let attempt = 0; attempt < 14; attempt += 1) {
+      const existing = findRow()
+      if (existing) return existing
+      if (requestId !== null && requestId !== this.nativeOutlineRevealRequestId) return null
+      if (signal?.aborted) return null
+
+      const rows = this.readMountedVirtualRows(container)
+      if (rows.length === 0) return null
+
+      const firstKey = rows[0].key
+      const lastKey = rows[rows.length - 1].key
+      if (messageId < firstKey) {
+        hi = mid
+      } else if (messageId > lastKey) {
+        lo = mid
+      } else {
+        // 目标 key 落在窗口区间内却未挂载：等几拍排除挂载滞后，仍没有就是 id 空洞
+        for (let wait = 0; wait < 3; wait += 1) {
+          await this.sleep(VIRTUAL_ROW_PROBE_SETTLE_MS)
+          const mounted = findRow()
+          if (mounted) return mounted
+        }
+        return null
+      }
+      if (hi - lo <= 2) return null
+
+      mid = Math.round((lo + hi) / 2)
+      container.scrollTop = mid
+      container.dispatchEvent(new Event("scroll", { bubbles: true }))
+      container.getBoundingClientRect()
+      await this.sleep(VIRTUAL_ROW_PROBE_SETTLE_MS)
     }
 
     return findRow()

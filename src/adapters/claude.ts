@@ -8,8 +8,19 @@ import {
   findScrollableAncestor,
   scrollElementInContainer,
 } from "~core/outline/dom-outline"
+import { parseClaudeHistoryOutline, type ClaudeHistoryOutlineData } from "./claude-history-outline"
+import {
+  parseClaudeHistoryExport,
+  type ClaudeHistoryExportDocument,
+  type ClaudeHistoryExportMessage,
+  type ClaudeHistoryExportUserFile,
+} from "./claude-history-export"
 import {
   createMarkdownDocumentAssetLink,
+  addImageExportAsset,
+  addMarkdownDocumentAsset,
+  createExportAssetCollector,
+  escapeMarkdownLinkText,
   formatExportFileAttachments,
   formatExportImageAttachments,
   isDownloadableExportAssetUrl,
@@ -19,7 +30,19 @@ import {
 import { htmlToMarkdown, type ExportBundle, type ExportMessage } from "~utils/exporter"
 import { t } from "~utils/i18n"
 import { renderMarkdown } from "~utils/markdown"
+import { EVENT_OUTLINE_DATA_UPDATED } from "~utils/messaging"
+import { READING_HISTORY_RESTORE_TOKEN_ATTRIBUTE } from "~utils/reading-history-navigation"
+import {
+  API_OUTLINE_PARSE_FAILURE_LIMIT,
+  isApiOutlineStale,
+  shouldAttemptApiOutlineFetch,
+} from "~utils/outline-api-source"
 import { hashTextForCache } from "~utils/text-hash"
+import {
+  alignScrollTop,
+  isClaudeVirtualEdgeSettled,
+  settleVirtualScroll,
+} from "~utils/virtual-scroll-settle"
 
 import {
   SiteAdapter,
@@ -89,12 +112,26 @@ const CLAUDE_INLINE_MATH_PATTERNS = [
 const CLAUDE_DOCUMENT_OUTLINE_SOURCE_ID = "document"
 const CLAUDE_EXPORT_ROOT_ATTR = "data-gh-claude-export-root"
 
+// 会话接口大纲数据源的拉取冷却与贴底判定（与 deepseek 同值）
+const CLAUDE_API_OUTLINE_FETCH_BACKOFF_MS = 10_000
+const CLAUDE_API_OUTLINE_BOTTOM_TOLERANCE_PX = 100
+
+/**
+ * 大纲文本可调和判定：相等或互为前缀。
+ * 200 字截断、KaTeX 重复等渲染/截断差异都表现为一方向另一方的前缀扩展；
+ * 互不前缀才视为分支/版本切换产生的真实文本变化。
+ */
+const isReconcilableOutlineText = (a: string, b: string): boolean =>
+  a === b || a.startsWith(b) || b.startsWith(a)
+
 interface ClaudeExportLifecycleState {
   documentPanelWasOpen: boolean
   documentSignature?: string
   documentTitle?: string | null
   documentArtifactIndex?: number | null
   thoughtContainersExpandedForExport?: HTMLElement[]
+  /** 本次导出走会话接口数据源：跳过快照/文档面板收集与恢复 */
+  usedApiExport?: boolean
 }
 
 interface ClaudeDocumentExportCacheEntry {
@@ -183,6 +220,8 @@ export class ClaudeAdapter extends SiteAdapter {
   private activeOrganizationId: string | null = null
   private activeOrganizationIdExpiresAt = 0
   private exportDocumentCache: ClaudeDocumentExportCacheEntry[] = []
+  private exportApiMessages: ExportMessage[] | null = null
+  private exportApiBundle: ExportBundle | null = null
   private exportDocumentCollectionRequired = false
   private exportIncludeThoughtsOverride: boolean | null = null
   private exportThoughtBlocks = new WeakMap<Element, string[]>()
@@ -197,6 +236,18 @@ export class ClaudeAdapter extends SiteAdapter {
   private outlineScanPromise: Promise<void> | null = null
   private isCollectingVirtualOutline = false
   private outlineWordCountCache = new WeakMap<Element, ClaudeOutlineWordCountCacheEntry>()
+  // 会话接口大纲数据源（替代全量滚动回填的首选路径）
+  private apiOutlineData: ClaudeHistoryOutlineData | null = null
+  private apiOutlineFetchPromise: Promise<void> | null = null
+  private apiOutlineLastFetchAt = 0
+  private apiOutlineFailures = 0
+  private apiOutlineSessionId = ""
+  private apiOutlineOrgMissing = false
+  private apiOutlineWasGenerating = false
+  private apiOutlineEntryIds = new Set<string>()
+  // 强制重拉信号（粘性，直到一次成功拉取才清除）：
+  // 生成/重新生成结束使分支叶变化、挂载行标题与 API 同 id 条目文本不一致（分支切换）
+  private apiOutlineForceRefetch = false
 
   match(): boolean {
     return (
@@ -451,7 +502,7 @@ export class ClaudeAdapter extends SiteAdapter {
       for (const body of bodies) {
         const response = await fetch(endpoint, {
           method: "DELETE",
-          headers: this.buildNativeDeleteHeaders(Boolean(body)),
+          headers: this.buildNativeApiHeaders(Boolean(body)),
           body,
           credentials: "include",
         })
@@ -501,7 +552,8 @@ export class ClaudeAdapter extends SiteAdapter {
     }
   }
 
-  private buildNativeDeleteHeaders(withBody: boolean): Record<string, string> {
+  // 站点原生 API 请求头（删除、会话拉取共用）
+  private buildNativeApiHeaders(withBody = false): Record<string, string> {
     const headers: Record<string, string> = {
       accept: "*/*",
       "anthropic-client-platform": "web_claude_ai",
@@ -1094,7 +1146,14 @@ export class ClaudeAdapter extends SiteAdapter {
       ? scrollingElement.scrollHeight - scrollingElement.clientHeight
       : -1
 
+    // 对话列表自己滚动时，不要因为外层页面可滚范围更大就改绑 document。
+    // 高屏上内层可滚距离变小，误绑后滚动位置会和大纲高亮一起错。
+    const conversationScroller =
+      container?.getAttribute("data-autoscroll-container") === "true" ||
+      container?.querySelector("[data-autoscroll-container='true']") != null
+
     if (
+      !conversationScroller &&
       container &&
       scrollingElement &&
       scrollingRange > containerRange + 100 &&
@@ -1112,6 +1171,20 @@ export class ClaudeAdapter extends SiteAdapter {
     }
 
     return super.getScrollContainer()
+  }
+
+  override async waitForVirtualListEdge(
+    edge: "start" | "end",
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    // 短对话没有虚拟列表，滚动到边缘就是到位，不能空等第一条虚拟行。
+    if (!this.isClaudeVirtualConversation()) return true
+    return settleVirtualScroll(
+      () => this.getScrollContainer(),
+      (container) => isClaudeVirtualEdgeSettled(container, edge),
+      (container) => alignScrollTop(container, edge === "start" ? 0 : container.scrollHeight),
+      signal,
+    )
   }
 
   getChatContentSelectors(): string[] {
@@ -1511,6 +1584,8 @@ export class ClaudeAdapter extends SiteAdapter {
     this.sortedCachedUserQueries = null
     this.outlineScannedMessageIndexes.clear()
     this.hasCompletedInitialVirtualOutlineScan = false
+    this.apiOutlineEntryIds.clear()
+    this.apiOutlineForceRefetch = false
   }
 
   private createClaudeOutlineItemId(
@@ -1546,6 +1621,18 @@ export class ClaudeAdapter extends SiteAdapter {
         this.createClaudeOutlineItemId(item.element as Element, isUserQuery, headingOrder)
       if (!id) continue
 
+      // 分支/版本切换信号：挂载行标题与缓存同 id 条目文本不可调和。
+      // 不限于 API 归属条目：挂载行的 < > 版本切换不经过生成态，
+      // DOM 归属条目也必须能触发强制重拉
+      const existing = this.outlineItemCache.get(id)
+      if (
+        existing &&
+        !existing.isUserQuery &&
+        !isReconcilableOutlineText(existing.text, item.text)
+      ) {
+        this.apiOutlineForceRefetch = true
+      }
+
       item.id = id
       item.navigationId = id
       this.outlineItemCache.set(id, {
@@ -1558,6 +1645,8 @@ export class ClaudeAdapter extends SiteAdapter {
         isTruncated: item.isTruncated,
         wordCount: item.wordCount,
       })
+      // 条目被 DOM 精确值精化后转为 DOM 来源，后续 API 重建不再删除/覆盖它
+      this.apiOutlineEntryIds.delete(id)
     }
   }
 
@@ -1608,10 +1697,17 @@ export class ClaudeAdapter extends SiteAdapter {
       this.isCollectingVirtualOutline ||
       this.outlineScanPromise ||
       this.isGenerating() ||
-      !this.isClaudeVirtualConversation()
+      !this.isClaudeVirtualConversation() ||
+      // 阅读历史恢复正在探测/对齐虚拟行，扫描的全段滚动会争抢同一容器；
+      // 恢复结束后下一次大纲刷新会重新触发调度
+      this.isReadingHistoryRestoreActive()
     ) {
       return
     }
+
+    // 会话接口仍可用时不做全量滚动回填：等接口数据到达或明确不可用
+    // （orgId 缺失 / 连续失败熔断）再退化为滚动扫描
+    if (!this.isApiOutlineUnavailable()) return
 
     if (this.completeInitialClaudeVirtualOutlineScanIfCovered()) return
 
@@ -1660,11 +1756,19 @@ export class ClaudeAdapter extends SiteAdapter {
       }
     } finally {
       if (this.outlineCacheSessionKey === expectedSessionKey) {
-        await this.scrollClaudeVirtualContainer(scrollContainer, originalScrollTop)
+        // 恢复在扫描中途启动时不再回滚到扫描起点，避免拽走恢复好的位置
+        if (!this.isReadingHistoryRestoreActive()) {
+          await this.scrollClaudeVirtualContainer(scrollContainer, originalScrollTop)
+        }
         this.completeInitialClaudeVirtualOutlineScanIfCovered()
       }
       this.isCollectingVirtualOutline = false
     }
+  }
+
+  /** 阅读历史恢复是否进行中（恢复期间会持有 restore token） */
+  private isReadingHistoryRestoreActive(): boolean {
+    return document.documentElement.hasAttribute(READING_HISTORY_RESTORE_TOKEN_ATTRIBUTE)
   }
 
   private recordMountedClaudeVirtualMessageIndexes(root: ParentNode): void {
@@ -1673,6 +1777,212 @@ export class ClaudeAdapter extends SiteAdapter {
       if (messageIndex !== null) {
         this.outlineScannedMessageIndexes.add(messageIndex)
       }
+    }
+  }
+
+  // ==================== 大纲缓存（会话接口数据源） ====================
+
+  /**
+   * Claude 长对话走 rocksteady 虚拟滚动，离屏回复的标题会从 DOM 卸载。
+   * 首选直接请求站点 chat_conversations 接口，从 text 内容块的 markdown 解析
+   * 标题与提问回填 outlineItemCache（与 DOM 扫描同一 id 体系，下游归并/定位不变）；
+   * 接口不可用（未登录/连续失败）时才退化为全量滚动回填。
+   */
+  private maybeRefreshApiOutline(): void {
+    if (!this.isUserConversationPage()) return
+    // 仅虚拟滚动会话需要接口回填：非虚拟会话 DOM 条目没有 data-rs-index，
+    // 接口条目写入缓存会导致大纲重复、提问定位被缓存路径劫持
+    if (!this.isClaudeVirtualConversation()) return
+
+    const sessionId = this.getSessionId()
+    if (sessionId !== this.apiOutlineSessionId) {
+      // 会话切换时解除失败熔断与拉取冷却，新会话应立即补齐大纲
+      this.apiOutlineSessionId = sessionId
+      this.apiOutlineFailures = 0
+      this.apiOutlineLastFetchAt = 0
+      this.apiOutlineOrgMissing = false
+    }
+
+    // 生成结束（含重新生成）后分支叶已变化，位置序号不变，必须强制重拉
+    const generating = this.isGenerating()
+    if (this.apiOutlineWasGenerating && !generating) {
+      this.apiOutlineForceRefetch = true
+    }
+    this.apiOutlineWasGenerating = generating
+
+    const scrollable = this.getScrollContainer()
+    const atBottom = scrollable
+      ? scrollable.scrollTop + scrollable.clientHeight >=
+        scrollable.scrollHeight - CLAUDE_API_OUTLINE_BOTTOM_TOLERANCE_PX
+      : true
+    const stale =
+      this.apiOutlineForceRefetch ||
+      isApiOutlineStale({
+        data: this.apiOutlineData,
+        sessionId,
+        mountedIds: this.collectMountedVirtualMessageIndexes(),
+        atBottom,
+      })
+
+    if (
+      !shouldAttemptApiOutlineFetch({
+        now: Date.now(),
+        lastFetchAt: this.apiOutlineLastFetchAt,
+        backoffMs: CLAUDE_API_OUTLINE_FETCH_BACKOFF_MS,
+        parseFailures: this.apiOutlineFailures,
+        inFlight: this.apiOutlineFetchPromise !== null,
+        generating,
+        stale,
+      })
+    ) {
+      return
+    }
+
+    // 任何一次实际发起的拉取都记入冷却，成功但数据未变的重拉也不会连续重试
+    this.apiOutlineLastFetchAt = Date.now()
+    this.apiOutlineFetchPromise = this.fetchApiOutline(sessionId)
+      .then((result) => {
+        if (result === "parse-failed") {
+          this.apiOutlineFailures += 1
+          return
+        }
+        if (result === "no-org") {
+          // 未登录态：不计失败（避免误熔断），但标记后滚动回填兜底才会启动
+          this.apiOutlineOrgMissing = true
+          return
+        }
+        this.apiOutlineFailures = 0
+        this.apiOutlineOrgMissing = false
+        if (result === "changed") {
+          window.postMessage({ type: EVENT_OUTLINE_DATA_UPDATED }, "*")
+        }
+      })
+      .catch((error) => {
+        // 网络/HTTP 失败同样计入熔断：连续失败时滚动回填兜底需要启动
+        this.apiOutlineFailures += 1
+        console.warn("[ClaudeAdapter] Failed to fetch conversation outline:", error)
+      })
+      .finally(() => {
+        this.apiOutlineFetchPromise = null
+      })
+  }
+
+  private isApiOutlineUnavailable(): boolean {
+    return this.apiOutlineOrgMissing || this.apiOutlineFailures >= API_OUTLINE_PARSE_FAILURE_LIMIT
+  }
+
+  private collectMountedVirtualMessageIndexes(): Set<number> {
+    const indexes = new Set<number>()
+    for (const row of this.getClaudeVirtualRows()) {
+      const messageIndex = this.getClaudeVirtualMessageIndex(row)
+      if (messageIndex !== null) {
+        indexes.add(messageIndex)
+      }
+    }
+    return indexes
+  }
+
+  private async fetchApiOutline(
+    sessionId: string,
+  ): Promise<"changed" | "unchanged" | "parse-failed" | "no-org"> {
+    const orgId = await this.getActiveOrganizationId()
+    if (!orgId) return "no-org"
+
+    const response = await fetch(this.buildConversationApiUrl(orgId, sessionId), {
+      headers: this.buildNativeApiHeaders(),
+      credentials: "include",
+    })
+    if (!response.ok) {
+      throw new Error(`chat_conversations responded ${response.status}`)
+    }
+
+    const totalMessages = this.getClaudeVirtualMessageCount() ?? undefined
+    const parsed = parseClaudeHistoryOutline(await response.json(), 6, totalMessages)
+    if (!parsed || parsed.sessionId !== sessionId) return "parse-failed"
+
+    const previous = this.apiOutlineData
+    this.apiOutlineData = parsed
+    this.apiOutlineForceRefetch = false
+    this.rebuildApiOutlineEntries(parsed)
+    return !previous ||
+      previous.sessionId !== parsed.sessionId ||
+      previous.signature !== parsed.signature
+      ? "changed"
+      : "unchanged"
+  }
+
+  private buildConversationApiUrl(orgId: string, sessionId: string): string {
+    const params = new URLSearchParams({
+      tree: "True",
+      rendering_mode: "messages",
+      render_all_tools: "true",
+      include_inline_comparison: "true",
+      consistency: "strong",
+    })
+    return `${window.location.origin}/api/organizations/${encodeURIComponent(orgId)}/chat_conversations/${encodeURIComponent(sessionId)}?${params}`
+  }
+
+  /**
+   * 用接口数据重建缓存条目。接口数据是激活分支结构的真值：
+   * 不在新分支中的缓存条目（含 DOM 归属）一律清除——编辑/重新生成截断
+   * 分支后它们已成为无法跳转的僵尸，仍挂载的行会在下次 extract 由
+   * updateClaudeOutlineCache 重建精确值。
+   * 同 id 且文本可调和的 DOM 归属条目保留（wordCount 是精确值）；
+   * 文本不可调和说明分支/版本已切换，以接口为准替换并转回 API 归属。
+   */
+  private rebuildApiOutlineEntries(data: ClaudeHistoryOutlineData): void {
+    this.ensureClaudeOutlineCacheSession()
+    this.sortedCachedUserQueries = null
+    const previousApiIds = new Set(this.apiOutlineEntryIds)
+
+    const nextEntries: ClaudeOutlineCacheEntry[] = []
+    for (const query of data.userQueries) {
+      // 与 DOM 条目同一截断规则：文本截 200，isTruncated 阈值 60
+      nextEntries.push({
+        id: `claude-message:${query.messageIndex}:user`,
+        messageIndex: query.messageIndex,
+        orderInMessage: 0,
+        level: 0,
+        text: query.text.length > 200 ? query.text.slice(0, 200) : query.text,
+        isUserQuery: true,
+        isTruncated: query.text.length > 60,
+        wordCount: data.replyWordCountByMessageIndex.get(query.messageIndex + 1),
+      })
+    }
+
+    for (const [messageIndex, headings] of data.headingsByMessageIndex) {
+      headings.forEach((heading, order) => {
+        // id 中标题序号为 0 基（与 createClaudeOutlineItemId 一致），
+        // orderInMessage 为 1 基（findClaudeOutlineTargetInMountedRow 按下标 -1 定位）
+        nextEntries.push({
+          id: `claude-message:${messageIndex}:heading:${order}`,
+          messageIndex,
+          orderInMessage: order + 1,
+          level: heading.level,
+          text: heading.text.length > 200 ? heading.text.slice(0, 200) : heading.text,
+          isUserQuery: false,
+          isTruncated: heading.text.length > 80,
+          wordCount: heading.wordCount,
+        })
+      })
+    }
+
+    // 僵尸清理：不在新分支中的条目（含 DOM 归属）全部移除
+    const nextIds = new Set(nextEntries.map((entry) => entry.id))
+    for (const id of Array.from(this.outlineItemCache.keys())) {
+      if (!nextIds.has(id)) this.outlineItemCache.delete(id)
+    }
+    this.apiOutlineEntryIds.clear()
+
+    for (const entry of nextEntries) {
+      const existing = this.outlineItemCache.get(entry.id)
+      if (existing && isReconcilableOutlineText(existing.text, entry.text)) {
+        // 保留现有条目；若其值仍来自上一轮接口，维持 API 归属记账
+        if (previousApiIds.has(entry.id)) this.apiOutlineEntryIds.add(entry.id)
+        continue
+      }
+      this.outlineItemCache.set(entry.id, entry)
+      this.apiOutlineEntryIds.add(entry.id)
     }
   }
 
@@ -1696,6 +2006,131 @@ export class ClaudeAdapter extends SiteAdapter {
     scrollContainer.scrollTop = top
     scrollContainer.dispatchEvent(new Event("scroll", { bubbles: true }))
     await this.sleep(100)
+  }
+
+  override isVirtualScrollConversation(): boolean {
+    return this.isClaudeVirtualConversation()
+  }
+
+  override getVirtualAnchorElement(): AnchorData | null {
+    if (!this.isClaudeVirtualConversation()) return null
+    const container = this.getScrollContainer()
+    if (!container) return null
+    const rows = this.getClaudeVirtualRows(container)
+    if (!rows.length) return null
+
+    // 视口上沿那条已挂载的虚拟行，语义与 getVisibleAnchorElement 一致
+    let bestRow: HTMLElement | null = null
+    let bestTop = Number.NEGATIVE_INFINITY
+    for (const row of rows) {
+      const top = this.getRelativeTop(container, row)
+      if (top <= container.scrollTop + 100 && top > bestTop) {
+        bestRow = row
+        bestTop = top
+      }
+    }
+    if (!bestRow) {
+      bestRow = rows[0]
+      bestTop = this.getRelativeTop(container, bestRow)
+    }
+
+    const rowKey = this.getClaudeVirtualMessageIndex(bestRow)
+    if (rowKey === null) return null
+
+    return {
+      type: "virtual-row",
+      rowKey,
+      offset: container.scrollTop - bestTop,
+      textSignature: (bestRow.textContent || "").trim().substring(0, 50),
+    }
+  }
+
+  override async restoreVirtualAnchor(anchor: AnchorData, signal?: AbortSignal): Promise<boolean> {
+    if (anchor.type !== "virtual-row" || typeof anchor.rowKey !== "number") return false
+    const rowKey = anchor.rowKey
+    const offset = anchor.offset || 0
+
+    // 虚拟列表的挂载晚于会话 id 就绪，冷加载可能要数秒，有界等待其出现；
+    // 期间用户主动滚动会通过 signal 中止等待
+    const deadline = Date.now() + 10000
+    while (!this.isClaudeVirtualConversation()) {
+      if (signal?.aborted) return false
+      if (Date.now() >= deadline) {
+        console.warn("[Ophel] Reading history restore skipped: Claude message list not ready")
+        return false
+      }
+      await this.sleep(100)
+    }
+
+    const scrollContainer = this.getScrollContainer()
+    if (!scrollContainer) return false
+
+    const findRow = () =>
+      this.getClaudeVirtualRows().find(
+        (row) => this.getClaudeVirtualMessageIndex(row) === rowKey,
+      ) ?? null
+
+    // 与 resolveCachedClaudeOutlineTarget 同一手法：按序号比例估算落点，
+    // 从近到远探测候选位置，直到目标行挂出
+    let row = findRow()
+    if (!row) {
+      const totalMessages = this.getClaudeVirtualMessageCount()
+      const maxScroll = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight)
+      const estimatedTop =
+        totalMessages && totalMessages > 1
+          ? (maxScroll * rowKey) / (totalMessages - 1)
+          : scrollContainer.scrollTop
+      const positions = this.buildClaudeVirtualScrollPositions(scrollContainer)
+      positions.sort((a, b) => Math.abs(a - estimatedTop) - Math.abs(b - estimatedTop))
+
+      for (const top of new Set([estimatedTop, ...positions])) {
+        if (signal?.aborted) return false
+        await this.scrollClaudeVirtualContainer(scrollContainer, top)
+        row = findRow()
+        if (row) break
+      }
+    }
+    if (signal?.aborted) return false
+    if (!row) {
+      console.warn("[Ophel] Reading history restore skipped: Claude message not found", rowKey)
+      return false
+    }
+
+    // 分支切换/编辑后序号可能指向另一条消息：文本不符宁可不跳，也不跳错
+    if (anchor.textSignature) {
+      const current = (row.textContent || "").trim().substring(0, 50)
+      if (current !== anchor.textSignature) {
+        console.warn(
+          "[Ophel] Reading history restore skipped: Claude message content changed",
+          rowKey,
+        )
+        return false
+      }
+    }
+
+    // 落定判定用「行相对容器顶部的视觉位置」而不是 scrollTop 像素：刷新后页面仍在
+    // 渲染，文档高度在漂，像素值几秒内稳定不下来；视觉位置才是保存 offset 的本义
+    const isAligned = (container: HTMLElement) => {
+      const target = findRow()
+      if (!target) return false
+      const visualOffset =
+        target.getBoundingClientRect().top - container.getBoundingClientRect().top
+      return Math.abs(visualOffset + offset) <= 24
+    }
+    const settled = await settleVirtualScroll(
+      () => this.getScrollContainer(),
+      isAligned,
+      (container) => {
+        const target = findRow()
+        if (target) alignScrollTop(container, this.getRelativeTop(container, target) + offset)
+      },
+      signal,
+      { timeoutMs: 4000 },
+    )
+    if (!settled && !signal?.aborted) {
+      console.warn("[Ophel] Reading history restore incomplete: Claude scroll did not settle")
+    }
+    return settled
   }
 
   getVisibleAnchorElement(): AnchorData | null {
@@ -1837,6 +2272,9 @@ export class ClaudeAdapter extends SiteAdapter {
     // 扫描覆盖与是否生成大纲项无关：用户消息被隐藏、助手回复没有标题时，
     // 这些已挂载行也必须记为已检查，避免消息总数增长后误触发全量回扫。
     this.recordMountedClaudeVirtualMessageIndexes(outlineRoot)
+
+    // 虚拟滚动首选数据源：异步拉取会话接口，补齐离屏回复的标题与提问
+    this.maybeRefreshApiOutline()
 
     // 辅助函数：从文本中移除思维链内容
     const removeThinkingContent = (text: string): string => {
@@ -2078,8 +2516,15 @@ export class ClaudeAdapter extends SiteAdapter {
     this.sortedCachedUserQueries = cachedUserQueries
     const entry = cachedUserQueries[queryIndex - 1]
 
-    if (entry) {
-      return this.findClaudeOutlineTargetInMountedRow(entry)
+    // 文本校验：序号压缩错位（如纯图片提问不占大纲序号）时缓存条目与
+    // 目标文本不可调和，跳过缓存路径交给基类按序号/文本搜索
+    if (entry && (!text || isReconcilableOutlineText(entry.text, text))) {
+      // 缓存条目可能对应未挂载行（或缓存来自接口回填而非虚拟扫描）：
+      // 挂载查找落空时回退基类按序号/文本搜索，而不是直接判失
+      return (
+        this.findClaudeOutlineTargetInMountedRow(entry) ??
+        super.findUserQueryElement(queryIndex, text)
+      )
     }
 
     return super.findUserQueryElement(queryIndex, text)
@@ -2232,6 +2677,154 @@ export class ClaudeAdapter extends SiteAdapter {
     return this.config.selectors.responseContainer
   }
 
+  /**
+   * 会话接口导出数据源：拉全量历史并解析为导出消息序列。
+   * 无法证明历史完整的情形（解析器判 null、接口失败、未登录）
+   * 都返回 null，调用方回退现有滚动快照收集。
+   */
+  private async collectApiExportMessages(
+    context: ExportLifecycleContext,
+    collector?: ExportAssetCollector,
+  ): Promise<ExportMessage[] | null> {
+    if (!this.isUserConversationPage()) return null
+    const sessionId = this.getSessionId()
+
+    try {
+      const orgId = await this.getActiveOrganizationId()
+      if (!orgId) return null
+
+      const response = await fetch(this.buildConversationApiUrl(orgId, sessionId), {
+        headers: this.buildNativeApiHeaders(),
+        credentials: "include",
+      })
+      if (!response.ok) return null
+
+      const parsed = parseClaudeHistoryExport(await response.json())
+      if (!parsed || parsed.sessionId !== sessionId) return null
+
+      const messages: ExportMessage[] = []
+      for (const message of parsed.messages) {
+        if (message.role === "user") {
+          const content = this.formatApiUserExportMessage(message, collector)
+          if (content) messages.push({ role: "user", content })
+          continue
+        }
+
+        const parts: string[] = []
+        if (context.includeThoughts && message.thinkingMarkdown) {
+          parts.push(
+            this.formatAsThoughtBlockquote(message.thinkingMarkdown, message.thinkingTitle),
+          )
+        }
+        for (const segment of message.segments) {
+          parts.push(
+            segment.type === "text"
+              ? segment.text
+              : this.formatApiDocumentSegment(segment.document, collector),
+          )
+        }
+        const content = parts.filter(Boolean).join("\n\n").trim()
+        if (content) {
+          messages.push({ role: "assistant", content })
+        }
+      }
+
+      return messages.length > 0 ? messages : null
+    } catch (error) {
+      console.warn("[ClaudeAdapter] Failed to collect api export payload:", error)
+      return null
+    }
+  }
+
+  // 与 extractClaudeUserQueryExportContent 同一输出结构：图片、附件列表、正文
+  private formatApiUserExportMessage(
+    message: ClaudeHistoryExportMessage,
+    collector?: ExportAssetCollector,
+  ): string {
+    // 仅「图片且有可下载地址」按图片嵌入；其余（非图片、缺 preview_url）
+    // 一律降级为附件链接行，避免静默丢失或误嵌图片语法
+    const isEmbeddableImage = (file: ClaudeHistoryExportUserFile): boolean =>
+      file.fileKind === "image" && Boolean(file.previewUrl)
+    const imageMarkdown = message.files
+      .filter(isEmbeddableImage)
+      .map((file) => this.formatApiUserImage(file, collector))
+      .filter(Boolean)
+    const otherFileLines = message.files
+      .filter((file) => !isEmbeddableImage(file))
+      .map((file) => {
+        const fileName = file.fileName || "file"
+        return file.previewUrl
+          ? `- [${escapeMarkdownLinkText(fileName)}](${file.previewUrl})`
+          : `- ${fileName}`
+      })
+    const fileLines = message.attachments.map((attachment) => {
+      const fileName = attachment.fileName || "file"
+      if (collector && attachment.extractedContent.trim()) {
+        const asset = addMarkdownDocumentAsset(collector, attachment.extractedContent, {
+          // buildMarkdownFilename 固定补 .md 后缀，先去掉文件名里已有的
+          title: fileName.replace(/\.md$/i, ""),
+          directory: "assets/files",
+          idPrefix: "claude-user-file",
+        })
+        return `- [${escapeMarkdownLinkText(fileName)}](${asset.path})`
+      }
+      return `- ${fileName}`
+    })
+    fileLines.push(...otherFileLines)
+    const fileBlock =
+      fileLines.length > 0 ? `${t("exportAttachmentsLabel")}:\n${fileLines.join("\n")}` : ""
+
+    return [imageMarkdown.join("\n\n"), fileBlock, message.requestText].filter(Boolean).join("\n\n")
+  }
+
+  private formatApiUserImage(
+    file: ClaudeHistoryExportUserFile,
+    collector?: ExportAssetCollector,
+  ): string {
+    if (!file.previewUrl) return ""
+    const source = file.previewUrl.startsWith("http")
+      ? file.previewUrl
+      : `${window.location.origin}${file.previewUrl}`
+    const alt = file.fileName || "image"
+    const assetPath = collector
+      ? addImageExportAsset(collector, {
+          source,
+          alt,
+          extensionHint: file.fileName,
+          idPrefix: "claude-user-image",
+          filenamePrefix: "claude-user-image",
+        })
+      : source
+    return assetPath ? `![${escapeMarkdownLinkText(alt)}](${assetPath})` : ""
+  }
+
+  private formatApiDocumentSegment(
+    document: ClaudeHistoryExportDocument,
+    collector?: ExportAssetCollector,
+  ): string {
+    // 与 formatClaudeArtifactPlaceholder 同风格的占位符（接口侧无元数据/下载地址）
+    if (!document.content) return `[Artifact: ${document.name}]`
+
+    if (document.mimeType === "text/markdown") {
+      if (collector) {
+        return createMarkdownDocumentAssetLink(collector, document.content, {
+          // buildMarkdownFilename 固定补 .md 后缀，先去掉名称里已有的
+          title: document.name.replace(/\.md$/i, ""),
+          fallbackTitle: "claude-document",
+          directory: "assets/documents",
+          idPrefix: "claude-document",
+        })
+      }
+      // 与 formatClaudeDocumentInlineContent 同规则
+      const trimmed = document.content.trim()
+      return /^#{1,6}\s+/m.test(trimmed) ? trimmed : `### ${document.name}\n\n${trimmed}`
+    }
+
+    // html 等其他源码：围栏代码块内联（~~~ 避免与正文 ``` 冲突）
+    const lang = document.path.split(".").pop() || ""
+    return `### ${document.name}\n\n~~~${lang}\n${document.content.trim()}\n~~~`
+  }
+
   async prepareConversationExport(context: ExportLifecycleContext): Promise<unknown> {
     this.ensureClaudeOutlineCacheSession()
     this.exportIncludeThoughtsOverride = context.includeThoughts
@@ -2240,6 +2833,25 @@ export class ClaudeAdapter extends SiteAdapter {
     this.exportThoughtBlocks = new WeakMap<Element, string[]>()
     this.exportThoughtBlocksByAssistantIndex = new Map<number, string[]>()
     this.removeClaudeExportSnapshot()
+    this.exportApiBundle = null
+
+    // 常规会话优先走会话接口拿全量 markdown（公式/代码零损耗、无需滚动收集）；
+    // 接口不可用或无法证明历史完整时返回 null，回退现有快照收集
+    const collector =
+      context.format === "markdown" && context.packaging === "zip"
+        ? createExportAssetCollector()
+        : undefined
+    this.exportApiMessages = await this.collectApiExportMessages(context, collector)
+    if (this.exportApiMessages) {
+      this.exportApiBundle = collector
+        ? { messages: this.exportApiMessages, assets: collector.assets }
+        : null
+      return {
+        documentPanelWasOpen: false,
+        thoughtContainersExpandedForExport: [],
+        usedApiExport: true,
+      } satisfies ClaudeExportLifecycleState
+    }
 
     const state: ClaudeExportLifecycleState = {
       documentPanelWasOpen: this.isClaudeDocumentPanelOpen(),
@@ -2293,6 +2905,7 @@ export class ClaudeAdapter extends SiteAdapter {
   ): Promise<void> {
     try {
       if (!this.isClaudeExportLifecycleState(state)) return
+      if (state.usedApiExport) return
 
       if (state.documentPanelWasOpen) {
         await this.restoreClaudeDocumentPanel(state)
@@ -2310,6 +2923,8 @@ export class ClaudeAdapter extends SiteAdapter {
       this.exportThoughtBlocks = new WeakMap<Element, string[]>()
       this.exportThoughtBlocksByAssistantIndex = new Map<number, string[]>()
       this.removeClaudeExportSnapshot()
+      this.exportApiMessages = null
+      this.exportApiBundle = null
     }
   }
 
@@ -2384,6 +2999,11 @@ export class ClaudeAdapter extends SiteAdapter {
   }
 
   async extractExportBundle(_context: ExportLifecycleContext): Promise<ExportBundle | null> {
+    // 接口数据源导出：zip 打包时携带 collector 收集的图片/文档资产
+    if (this.exportApiMessages) {
+      return this.exportApiBundle
+    }
+
     if (!this.hasClaudeExportAssets()) {
       return null
     }
@@ -2394,6 +3014,10 @@ export class ClaudeAdapter extends SiteAdapter {
   }
 
   async extractExportMessages(_context: ExportLifecycleContext): Promise<ExportMessage[] | null> {
+    if (this.exportApiMessages) {
+      return this.exportApiMessages
+    }
+
     if (
       !this.exportSnapshotRoot &&
       this.exportDocumentCache.length === 0 &&

@@ -72,6 +72,7 @@ export async function smartScrollToTop(
   container: HTMLElement
   previousScrollTop: number
   scrollHeight: number
+  virtualEdgeSettled: boolean
 }> {
   if (!options.preserveReadingHistoryRestore) {
     signalReadingHistoryUserNavigation()
@@ -83,6 +84,7 @@ export async function smartScrollToTop(
       container: currentContainer,
       previousScrollTop: currentContainer.scrollTop,
       scrollHeight: currentContainer.scrollHeight,
+      virtualEdgeSettled: false,
     }
   }
 
@@ -98,8 +100,14 @@ export async function smartScrollToTop(
       ...{ __bypassLock: true },
     } as any)
 
-    notifyOutlineJumpCompleted(options.preserveReadingHistoryRestore)
-    return { container, previousScrollTop, scrollHeight }
+    // 大纲刷新必须等虚拟列表把第一条挂进视口。scrollTop 先变成 0 时，屏幕上可能还是后半段。
+    const virtualEdgeSettled = adapter?.usesVirtualOutlineFill()
+      ? await adapter.waitForVirtualListEdge("start", options.signal)
+      : true
+    if (virtualEdgeSettled) {
+      notifyOutlineJumpCompleted(options.preserveReadingHistoryRestore)
+    }
+    return { container, previousScrollTop, scrollHeight, virtualEdgeSettled }
   }
 
   // 最终回退到 document.documentElement
@@ -108,6 +116,7 @@ export async function smartScrollToTop(
     container: fallback,
     previousScrollTop: fallback.scrollTop,
     scrollHeight: fallback.scrollHeight,
+    virtualEdgeSettled: true,
   }
 }
 
@@ -116,10 +125,11 @@ export async function smartScrollToTop(
  */
 export async function smartScrollToBottom(
   adapter: SiteAdapter | null,
-  options: { preserveReadingHistoryRestore?: boolean } = {},
+  options: { preserveReadingHistoryRestore?: boolean; signal?: AbortSignal } = {},
 ): Promise<{
   container: HTMLElement
   previousScrollTop: number
+  virtualEdgeSettled: boolean
 }> {
   if (!options.preserveReadingHistoryRestore) {
     signalReadingHistoryUserNavigation()
@@ -136,13 +146,19 @@ export async function smartScrollToBottom(
       ...{ __bypassLock: true },
     } as any)
 
+    // 没到底就不要通知大纲，否则会按仍在中途的窗口重算高亮。
+    if (adapter?.usesVirtualOutlineFill()) {
+      const settled = await adapter.waitForVirtualListEdge("end", options.signal)
+      if (!settled) return { container, previousScrollTop, virtualEdgeSettled: false }
+    }
+
     notifyOutlineJumpCompleted(options.preserveReadingHistoryRestore)
-    return { container, previousScrollTop }
+    return { container, previousScrollTop, virtualEdgeSettled: true }
   }
 
   // 最终回退到 document.documentElement
   const fallback = document.documentElement
-  return { container: fallback, previousScrollTop: fallback.scrollTop }
+  return { container: fallback, previousScrollTop: fallback.scrollTop, virtualEdgeSettled: true }
 }
 
 /**

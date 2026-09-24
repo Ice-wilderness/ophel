@@ -5,7 +5,7 @@
  * 数据存储已迁移到 reading-history-store.ts
  */
 
-import type { SiteAdapter } from "~adapters/base"
+import type { AnchorData, SiteAdapter } from "~adapters/base"
 import {
   getReadingHistoryStore,
   useReadingHistoryStore,
@@ -289,6 +289,10 @@ export class ReadingHistoryManager {
     }
   }
 
+  private prefersContainerScrollRestore(): boolean {
+    return this.adapter.usesVirtualOutlineFill?.() ?? false
+  }
+
   private getKey(sessionId = this.getSessionId()): string {
     const normalizedSessionId = sessionId || "unknown"
     return createSiteScopedStorageKey(this.adapter.getSiteInstanceKey(), normalizedSessionId)
@@ -423,7 +427,10 @@ export class ReadingHistoryManager {
 
     let anchorInfo = {}
     try {
-      if (this.adapter.getVisibleAnchorElement) {
+      if (this.adapter.isVirtualScrollConversation()) {
+        // 虚拟滚动的窗口下标和像素都不是全局位置，只存稳定行身份
+        anchorInfo = this.adapter.getVirtualAnchorElement() || {}
+      } else if (this.adapter.getVisibleAnchorElement) {
         anchorInfo = this.adapter.getVisibleAnchorElement() || {}
       }
     } catch {
@@ -484,10 +491,21 @@ export class ReadingHistoryManager {
       const data = this.claimLegacyPosition(sessionId)
 
       if (!data) {
+        if (this.prefersContainerScrollRestore()) {
+          console.warn("[Ophel] Reading history restore skipped: no saved position", sessionId)
+        }
         return false
       }
 
-      // 1. 精确恢复：尝试通过内容锚点定位
+      // 虚拟滚动站点（Claude/DeepSeek）：只按稳定行身份或确认非虚拟后的内容锚点
+      // 恢复，任何失败都停在站点自己打开的位置，绝不回退像素（像素会落到另一段对话）。
+      if (this.prefersContainerScrollRestore()) {
+        restoredSuccessfully = await this.restoreVirtualSitePosition(data, restoreController.signal)
+        if (restoreController.signal.aborted) return false
+        return restoredSuccessfully
+      }
+
+      // 1. 精确恢复：尝试通过内容锚点定位。
       if (data.type && this.adapter.restoreScroll) {
         try {
           const contentRestored = await this.adapter.restoreScroll(data as any)
@@ -569,6 +587,91 @@ export class ReadingHistoryManager {
   cleanup() {
     const days = this.settings.cleanupDays || 7
     getReadingHistoryStore().cleanup(days)
+  }
+
+  /**
+   * virtualOutlineFill 站点（Claude/DeepSeek）的恢复入口。
+   * 只认两类已存数据：
+   * - virtual-row 锚点：交给适配器按稳定行身份挂载对齐。虚拟列表布局仍在变化，
+   *   不设置 restoredTop，避免 finally 再启动像素 PositionKeeper 与重挂载打架。
+   * - 普通内容锚点：仅当前会话确认非虚拟（短对话）时走原 restoreScroll。
+   * 其余情况（旧版本只存像素的记录、探测失败）一律放弃，停在站点自己打开的位置。
+   */
+  private async restoreVirtualSitePosition(
+    data: ReadingPosition,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    if (data.type === "virtual-row" && typeof data.rowKey === "number") {
+      const anchor: AnchorData = {
+        type: "virtual-row",
+        rowKey: data.rowKey,
+        offset: data.offset ?? 0,
+        textSignature: data.textSignature,
+      }
+      const restored = await this.adapter.restoreVirtualAnchor(anchor, signal)
+      if (signal.aborted) return false
+      if (!restored) {
+        console.warn("[Ophel] Reading history restore failed for virtual row", data.rowKey)
+        return false
+      }
+      return true
+    }
+
+    if (!data.type || !this.adapter.restoreScroll) {
+      // 旧版本只存了像素位置的记录走到这里：像素在虚拟列表里会落到另一段对话，放弃
+      console.warn(
+        "[Ophel] Reading history restore skipped: saved position predates stable anchors",
+        { top: data.top },
+      )
+      return false
+    }
+
+    const isVirtual = await this.waitForVirtualConversation(signal)
+    if (signal.aborted) return false
+    if (isVirtual) {
+      console.warn(
+        "[Ophel] Reading history restore skipped: stale anchor inside a virtual conversation",
+      )
+      return false
+    }
+
+    try {
+      const restored = this.adapter.restoreScroll(data as AnchorData)
+      if (signal.aborted || !restored) return false
+      const container = this.adapter.getScrollContainer() || document.documentElement
+      this.restoredTop = (container as HTMLElement).scrollTop || window.scrollY
+      document.documentElement.dataset.ophelPositionLock = String(this.restoredTop)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * 等待虚拟化判定稳定：虚拟列表出现即确认；内容已持续渲染约 500ms 仍无
+   * 虚拟化信号则判定为短对话。中止时按虚拟处理，避免误用陈旧锚点跳错。
+   */
+  private async waitForVirtualConversation(signal: AbortSignal): Promise<boolean> {
+    const deadline = Date.now() + 3000
+    let stableContentChecks = 0
+
+    while (Date.now() < deadline) {
+      if (signal.aborted) return true
+      if (this.adapter.isVirtualScrollConversation()) return true
+
+      let hasContent = false
+      try {
+        hasContent = !!this.adapter.getVisibleAnchorElement?.()
+      } catch {
+        hasContent = false
+      }
+      stableContentChecks = hasContent ? stableContentChecks + 1 : 0
+      if (stableContentChecks >= 5) return false
+
+      await this.waitForAbortableDelay(100, signal)
+    }
+
+    return this.adapter.isVirtualScrollConversation()
   }
 
   /**
