@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+---
+
+## [1.2.9][1.2.9] - 2026-09-24
+
 ### ✨ 功能优化
 
 - **Claude、DeepSeek 大纲抽取、导出、阅读历史优化** — 长对话来回滚动时大纲标题始终保持完整并支持跳转定位，导出对话无需逐屏翻页，思考过程、公式与代码内容完整保留；刷新后自动回到上次阅读的位置。 (#953, #954)
@@ -1561,6 +1565,7 @@
 
 ---
 
+[1.2.9]: https://github.com/urzeye/ophel/releases/tag/v1.2.9
 [1.2.8]: https://github.com/urzeye/ophel/releases/tag/v1.2.8
 [1.2.7]: https://github.com/urzeye/ophel/releases/tag/v1.2.7
 [1.2.6]: https://github.com/urzeye/ophel/releases/tag/v1.2.6

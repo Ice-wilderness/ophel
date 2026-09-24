@@ -9,6 +9,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+---
+
+## [1.2.9][1.2.9] - 2026-09-24
+
 ### ✨ Improvements
 
 - **Claude, DeepSeek outline, export and reading history** — Reply headings in long conversations stay complete while scrolling and jump accurately when clicked, exporting no longer requires scrolling page-by-page while keeping reasoning, formulas, and code intact, and refreshing now returns to where you left off reading. (#953, #954)
@@ -1562,6 +1566,7 @@ This is the first official release of Ophel, providing comprehensive enhancement
 
 ---
 
+[1.2.9]: https://github.com/urzeye/ophel/releases/tag/v1.2.9
 [1.2.8]: https://github.com/urzeye/ophel/releases/tag/v1.2.8
 [1.2.7]: https://github.com/urzeye/ophel/releases/tag/v1.2.7
 [1.2.6]: https://github.com/urzeye/ophel/releases/tag/v1.2.6
