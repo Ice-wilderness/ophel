@@ -440,14 +440,12 @@ export class GrokAdapter extends SiteAdapter {
   }
 
   navigateToConversation(id: string, url?: string): boolean {
-    if (url) {
-      window.location.href = url
-      return true
-    }
-    window.location.href = this.config.conversation.urlTemplate.replace(
-      "{id}",
-      encodeURIComponent(id),
-    )
+    const targetUrl =
+      url || this.config.conversation.urlTemplate.replace("{id}", encodeURIComponent(id))
+    // Grok 路由响应 popstate，优先用 history 导航免刷新切换（已实测验证）
+    if (this.navigateViaHistory(targetUrl)) return true
+    // 降级：整页跳转
+    window.location.href = targetUrl
     return true
   }
 
