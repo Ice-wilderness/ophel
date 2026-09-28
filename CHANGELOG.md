@@ -9,18 +9,21 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+**⚠️ Notice — Our GitHub account has been temporarily suspended in error, and we are actively appealing. Until it is restored, GitHub links (repository, issue tracker) and the online adapter library in the Adapter Center may be unavailable. If you run into any problems, please let us know on [Discord](https://discord.gg/rmPzb6Cx9u).**
+
+**📢 Notice — ChatGPT is currently rolling out a major web redesign to select accounts, significantly restructuring the sidebar history, composer, and chat layout, which causes the extension's existing selectors to stop functioning. As none of our developer accounts have received this rollout yet, dynamic interactions cannot be tested and full adaptation is temporarily blocked until our accounts receive the update, ChatGPT rolls it out globally, or a community member can grant temporary account access for debugging. If you have a test account on the new interface and are willing to assist, please reach out to us on [Discord](https://discord.gg/rmPzb6Cx9u).**
+
 ### ✨ Improvements
 
-- **Switch conversations without reloading** — Switching to another conversation from the Chats tab now happens in place instead of reloading the whole page, making switching faster while keeping your current reading state.
-- **AI Studio long conversation outline, export, and reading history** — In long AI Studio conversations, reply headings in the outline now stay complete no matter how far you scroll and clicking them jumps to the right spot; exporting now captures the entire conversation at once without scrolling, keeping reasoning, attachments with real names, and images; refreshing or reopening the page also returns you to where you left off reading.
-- **Grok long conversation outline, export, and reading history** — In long Grok conversations, questions and reply headings in the outline now stay complete no matter how far you scroll, and clicking an entry jumps to the right spot; exporting now captures the entire conversation at once without scrolling, keeping attachments and generated images; refreshing or reopening the page also returns you to where you left off reading.
-- **Hide quick buttons when panel is open** — "Hide quick buttons when panel is open" is now enabled by default, automatically hiding the floating quick buttons when the main panel expands to keep the screen uncluttered and restoring them when collapsed.
+- **AI Studio and Grok long conversation outline, export, and reading history** — Outline headings in long conversations now stay complete while scrolling and jump accurately when clicked; exporting captures the full conversation at once without scrolling, keeping reasoning, attachments, and images; refreshing returns you to where you left off reading. (#962, #963)
+- **Switch conversations without reloading** — Switching between conversations from the Chats tab now happens in place instead of reloading the entire page, jumping faster while keeping your reading state. (#960)
+- **Hide quick buttons when panel is open** — "Hide quick buttons when panel is open" is now enabled by default, automatically hiding the floating button group when the main panel expands to keep the screen uncluttered and restoring them when collapsed. (#964)
 
 ### 🐛 Bug Fixes
 
-- **Auto-hide input on Gemini** — Adapted to Gemini's new page structure; the "Auto-hide Input" feature works again, with the input box collapsing when idle and reappearing when the pointer nears the bottom or the input is focused.
-- **Grok user questions missing** — Adapted to Grok's redesigned conversation page; user questions appear in the outline again, and copying the outline or exporting conversations includes both questions and replies correctly.
-- **Grok sync with collapsed sidebar** — Syncing conversations no longer reports "no conversations detected in the sidebar" when Grok's sidebar is collapsed; the sidebar is now expanded automatically before syncing.
+- **Grok user questions missing** — Adapted to Grok's redesigned conversation page; user questions appear in the outline again, and copying outline or exporting conversations includes complete questions and replies. (#961)
+- **Grok sync with collapsed sidebar** — Fixed an issue where syncing conversations while Grok's sidebar was collapsed reported no conversations detected; the sidebar is now automatically expanded during sync. (#963)
+- **Gemini auto-hide input** — Adapted to Gemini's new page structure; the "Auto-hide Input" feature is restored, collapsing the input box when idle and bringing it back when the cursor nears the bottom or the input is focused. (#959)
 
 ---
 
