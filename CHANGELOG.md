@@ -13,11 +13,13 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 - **Switch conversations without reloading** — Switching to another conversation from the Chats tab now happens in place instead of reloading the whole page, making switching faster while keeping your current reading state.
 - **AI Studio long conversation outline, export, and reading history** — In long AI Studio conversations, reply headings in the outline now stay complete no matter how far you scroll and clicking them jumps to the right spot; exporting now captures the entire conversation at once without scrolling, keeping reasoning, attachments with real names, and images; refreshing or reopening the page also returns you to where you left off reading.
+- **Grok long conversation outline, export, and reading history** — In long Grok conversations, questions and reply headings in the outline now stay complete no matter how far you scroll, and clicking an entry jumps to the right spot; exporting now captures the entire conversation at once without scrolling, keeping attachments and generated images; refreshing or reopening the page also returns you to where you left off reading.
 
 ### 🐛 Bug Fixes
 
 - **Auto-hide input on Gemini** — Adapted to Gemini's new page structure; the "Auto-hide Input" feature works again, with the input box collapsing when idle and reappearing when the pointer nears the bottom or the input is focused.
 - **Grok user questions missing** — Adapted to Grok's redesigned conversation page; user questions appear in the outline again, and copying the outline or exporting conversations includes both questions and replies correctly.
+- **Grok sync with collapsed sidebar** — Syncing conversations no longer reports "no conversations detected in the sidebar" when Grok's sidebar is collapsed; the sidebar is now expanded automatically before syncing.
 
 ---
 
