@@ -9,6 +9,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### ✨ Improvements
+
+- **Chats tab improvements** — Improved filters, batch actions, search, and drag-and-drop in conversation management, and fixed several related issues.
+
 ---
 
 ## [1.2.10][1.2.10] - 2026-09-28

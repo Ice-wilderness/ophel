@@ -151,6 +151,11 @@
   height: 0;
 } /* Chrome */
 
+/* 批量模式下禁用文本选择，避免 Shift 连选时触发原生文本高亮 */
+.conversations-folder-list.is-batch-mode {
+  user-select: none;
+}
+
 /* 对话 Tab 主容器隐藏滚动条 */
 .conversations-content {
   scrollbar-width: none; /* Firefox */
@@ -506,6 +511,47 @@ html[data-theme="dark"] .conversations-unsupported-icon {
 
 .conversations-result-bar.visible {
   display: block;
+}
+
+/* 活动筛选胶囊（可单独移除） */
+.conversations-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.conversations-filter-chips:empty {
+  display: none;
+}
+
+.conversations-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--gh-border, #e5e7eb);
+  background: var(--gh-bg-secondary, #f9fafb);
+  color: var(--gh-text, #374151);
+  font-size: 11px;
+  line-height: 1.4;
+  font-family: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  max-width: 160px;
+}
+
+.conversations-filter-chip:hover {
+  border-color: var(--gh-primary, #4285f4);
+  color: var(--gh-primary, #4285f4);
+}
+
+.conversations-filter-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 标签样式 */
@@ -1096,6 +1142,7 @@ html[data-theme="dark"] .conversations-unsupported-icon {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   border-radius: 8px;
   margin-top: 8px;
   border: 1px solid var(--gh-border, #e5e7eb);
@@ -1106,15 +1153,22 @@ html[data-theme="dark"] .conversations-unsupported-icon {
   color: var(--gh-text, #374151);
   font-size: 13px;
   font-weight: 500;
+  /* 长文案语言下计数不换行、不被压缩，按钮区不足时整体换行 */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .conversations-batch-btns {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 6px;
+  min-width: 0;
 }
 
 .conversations-batch-btn {
-  padding: 4px 10px;
+  padding: 4px 6px;
+  min-width: auto;
   border: 1px solid var(--gh-input-border, #d1d5db);
   border-radius: 6px;
   font-size: 12px;
