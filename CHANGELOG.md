@@ -15,6 +15,10 @@ versioning follows [Semantic Versioning](https://semver.org/).
 - **Outline tab improvements** — The level slider now supports dragging, the toolbar adapts to narrow panels, rows are better aligned, and the export button's shimmer hint stops after the first click. (#966)
 - **Prompts tab improvements** — Improved category filters, variable markers, and empty-state messaging for prompts, and fixed several related issues. (#967)
 
+### 🐛 Bug Fixes
+
+- **Image-only questions missing from outline and export** — Fixed issues where questions that contain only an image or file with no text did not appear in the outline on DeepSeek and Claude, and pasted-image questions were left out of AI Studio exports; the outline now shows these questions with the attachment file name, and pasted images are exported together with the question. (#970)
+
 ---
 
 ## [1.2.10][1.2.10] - 2026-09-28
