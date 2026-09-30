@@ -299,6 +299,8 @@ export const renderMarkdown = (
   return html
 }
 
+export { enhanceReleaseNotesHtml } from "./release-notes-enhancer"
+
 function isUserscriptPlatform(): boolean {
   return typeof __PLATFORM__ !== "undefined" && __PLATFORM__ === "userscript"
 }

@@ -9,15 +9,19 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+**⚠️ Notice — Our GitHub account has been temporarily suspended in error, and we are actively appealing. Until it is restored, GitHub links (repository, issue tracker) and the online adapter library in the Adapter Center may be unavailable. If you run into any problems, please let us know on [Discord](https://discord.gg/rmPzb6Cx9u).**
+
+**📢 Notice — ChatGPT is currently rolling out a major web redesign to select accounts, significantly restructuring the sidebar history, composer, and chat layout, which causes the extension's existing selectors to stop functioning. As none of our developer accounts have received this rollout yet, dynamic interactions cannot be tested and full adaptation is temporarily blocked until our accounts receive the update, ChatGPT rolls it out globally, or a community member can grant temporary account access for debugging. If you have a test account on the new interface and are willing to assist, please reach out to us on [Discord](https://discord.gg/rmPzb6Cx9u).**
+
 ### ✨ Improvements
 
-- **Chats tab improvements** — Improved filters, batch actions, search, and drag-and-drop in conversation management, and fixed several related issues.
-- **Outline tab improvements** — The level slider now supports dragging, the toolbar adapts to narrow panels, rows are better aligned, and the export button's shimmer hint stops after the first click. (#966)
-- **Prompts tab improvements** — Improved category filters, variable markers, and empty-state messaging for prompts, and fixed several related issues. (#967)
+- **Chats tab improvements** — Improved filters, search, batch actions, and drag-and-drop reordering in conversation management. (#965)
+- **Outline tab improvements** — The level slider now supports drag adjustment, the toolbar automatically compacts on narrow panels, row alignment is improved, and the export button shimmer stops after the first click. (#966)
+- **Prompts tab improvements** — Improved category filtering, variable tags, and empty-state guidance for prompts. (#967)
 
 ### 🐛 Bug Fixes
 
-- **Image-only questions missing from outline and export** — Fixed issues where questions that contain only an image or file with no text did not appear in the outline on DeepSeek and Claude, and pasted-image questions were left out of AI Studio exports; the outline now shows these questions with the attachment file name, and pasted images are exported together with the question. (#970)
+- **Attachment-only questions missing from outline and export** — Fixed an issue where questions containing only images or files were missing from the outline on DeepSeek and Claude, or omitted from AI Studio exports; the outline now shows the attachment file name and exports include the attachments. (#970)
 
 ---
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { renderMarkdown } from "~utils/markdown"
+import { enhanceReleaseNotesHtml, renderMarkdown } from "~utils/markdown"
 
 const renderReleaseNotes = (content: string) =>
   renderMarkdown(content, false, { linkGithubReferences: true })
@@ -47,5 +47,57 @@ describe("renderMarkdown linkify CJK tail trimming", () => {
 
     expect(html).toContain('<a href="https://example.com/">文档</a>')
     expect(html).toContain("页面</a>")
+  })
+})
+
+describe("enhanceReleaseNotesHtml", () => {
+  it("enhances blockquote with 国庆快乐 into festive banner", () => {
+    const raw = renderMarkdown("> 🇨🇳 **国庆快乐！祝各位节日愉快，阖家安康！**", false)
+    const enhanced = enhanceReleaseNotesHtml(raw)
+
+    expect(enhanced).toContain('<blockquote class="gh-release-notes-festive">')
+    expect(enhanced).toContain("国庆快乐！")
+  })
+
+  it("enhances paragraph with 国庆快乐 into festive banner", () => {
+    const raw = renderMarkdown("**🎉 国庆快乐！祝大家度过一个愉快充实的假期！**", false)
+    const enhanced = enhanceReleaseNotesHtml(raw)
+
+    expect(enhanced).toContain('<div class="gh-release-notes-festive">')
+    expect(enhanced).toContain("国庆快乐！")
+  })
+
+  it("enhances announcement notices with notice card styling", () => {
+    const raw = renderMarkdown(
+      "**⚠️ 公告 — 我们的 GitHub 账号暂时被误封禁，目前正在积极申诉。**",
+      false,
+    )
+    const enhanced = enhanceReleaseNotesHtml(raw)
+
+    expect(enhanced).toContain('<div class="gh-release-notes-notice">')
+    expect(enhanced).toContain("⚠️ 公告")
+  })
+
+  it("enhances English Notice with notice card styling", () => {
+    const raw = renderMarkdown(
+      "**📢 Notice — ChatGPT is currently rolling out a major web redesign.**",
+      false,
+    )
+    const enhanced = enhanceReleaseNotesHtml(raw)
+
+    expect(enhanced).toContain('<div class="gh-release-notes-notice">')
+    expect(enhanced).toContain("📢 Notice")
+  })
+
+  it("leaves regular changelog entries and headings untouched", () => {
+    const raw = renderMarkdown(
+      "### ✨ 功能优化\n\n- **对话管理体验优化** — 优化对话筛选与搜索。 (#965)",
+      false,
+    )
+    const enhanced = enhanceReleaseNotesHtml(raw)
+
+    expect(enhanced).not.toContain("gh-release-notes-festive")
+    expect(enhanced).not.toContain("gh-release-notes-notice")
+    expect(enhanced).toContain("对话管理体验优化")
   })
 })

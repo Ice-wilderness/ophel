@@ -56,3 +56,5 @@ export const getHighlightStyles = (): string => {
   if (typeof window === "undefined") return ""
   return window.__OPHEL_MARKDOWN_PREVIEW_STYLES__ || ""
 }
+
+export { enhanceReleaseNotesHtml } from "~utils/release-notes-enhancer"

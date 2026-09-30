@@ -15,7 +15,7 @@ import { Tooltip } from "~components/ui/Tooltip"
 import { OPHEL_HOVER_WIDTH_RETAIN_LAYER_PROPS } from "~utils/dom-toolkit"
 import { GITHUB_REPO_URL, getDonateChannels } from "~utils/donate-channels"
 import { t } from "~utils/i18n"
-import { getHighlightStyles, renderMarkdown } from "~utils/markdown"
+import { enhanceReleaseNotesHtml, getHighlightStyles, renderMarkdown } from "~utils/markdown"
 import { createSafeHTML } from "~utils/trusted-types"
 
 interface ReleaseNotesModalProps {
@@ -59,7 +59,9 @@ const resolveReleaseNotesAssetUrl = (source: string): string => {
 }
 
 const renderReleaseNotesMarkdown = (content: string): string =>
-  createSafeHTML(renderMarkdown(content, false, { linkGithubReferences: true }))
+  createSafeHTML(
+    enhanceReleaseNotesHtml(renderMarkdown(content, false, { linkGithubReferences: true })),
+  )
 
 const createMarkdownBlock = (key: string, content: string): ReleaseNotesContentBlock => ({
   key,
