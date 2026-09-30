@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+---
+
+## [1.2.11][1.2.11] - 2026-09-30
+
 > 🇨🇳 **国庆快乐！祝各位节日愉快，阖家安康！**
 
 **⚠️ 公告 — 我们的 GitHub 账号暂时被误封禁，目前正在积极申诉。恢复之前，GitHub 仓库、问题反馈页面以及适配中心的在线适配库可能暂时无法访问。如遇到任何问题，请前往 [Discord](https://discord.gg/rmPzb6Cx9u) 反馈。**
@@ -1601,6 +1605,7 @@
 
 ---
 
+[1.2.11]: https://github.com/urzeye/ophel/releases/tag/v1.2.11
 [1.2.10]: https://github.com/urzeye/ophel/releases/tag/v1.2.10
 [1.2.9]: https://github.com/urzeye/ophel/releases/tag/v1.2.9
 [1.2.8]: https://github.com/urzeye/ophel/releases/tag/v1.2.8
